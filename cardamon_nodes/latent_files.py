@@ -8,12 +8,10 @@ so saved latents need not be moved to the input directory first.
 import json
 import os
 
-import safetensors
-import safetensors.torch
-import torch
-
 import comfy.nested_tensor
 import folder_paths
+import safetensors
+import safetensors.torch
 from comfy.cli_args import args
 from comfy_api.latest import io, ui
 
@@ -25,15 +23,23 @@ FORMAT_VERSION = 1
 def save_latent(latent, path, metadata=None):
     samples = latent["samples"]
     if getattr(samples, "is_nested", False):
-        tensors = {"samples.{}".format(i): t.contiguous().cpu() for i, t in enumerate(samples.tensors)}
+        tensors = {
+            f"samples.{i}": t.contiguous().cpu() for i, t in enumerate(samples.tensors)
+        }
         nested = len(samples.tensors)
     else:
         tensors = {"samples": samples.contiguous().cpu()}
         nested = 0
     # Keep the dict's simple values; tensors such as noise_mask belong to one sampling run.
-    extras = {k: v for k, v in latent.items() if k != "samples" and isinstance(v, (bool, int, float, str))}
+    extras = {
+        k: v
+        for k, v in latent.items()
+        if k != "samples" and isinstance(v, (bool, int, float, str))
+    }
     metadata = dict(metadata or {})
-    metadata[FORMAT_KEY] = json.dumps({"version": FORMAT_VERSION, "nested": nested, "extras": extras})
+    metadata[FORMAT_KEY] = json.dumps(
+        {"version": FORMAT_VERSION, "nested": nested, "extras": extras}
+    )
     safetensors.torch.save_file(tensors, path, metadata=metadata)
 
 
@@ -43,15 +49,16 @@ def load_latent(path):
         if info is None:
             # Built-in SaveLatent format
             if "latent_tensor" not in f.keys():
-                raise ValueError("{} is not a latent file".format(path))
+                raise ValueError(f"{path} is not a latent file")
             multiplier = 1.0 if "latent_format_version_0" in f.keys() else 1.0 / 0.18215
             return {"samples": f.get_tensor("latent_tensor").float() * multiplier}
         info = json.loads(info)
         if info["version"] > FORMAT_VERSION:
-            raise ValueError("{} was saved by a newer version of these nodes".format(path))
+            raise ValueError(f"{path} was saved by a newer version of these nodes")
         if info["nested"]:
             samples = comfy.nested_tensor.NestedTensor(
-                [f.get_tensor("samples.{}".format(i)).float() for i in range(info["nested"])])
+                [f.get_tensor(f"samples.{i}").float() for i in range(info["nested"])]
+            )
         else:
             samples = f.get_tensor("samples").float()
     return {"samples": samples, **info["extras"]}
@@ -59,7 +66,10 @@ def load_latent(path):
 
 def output_latent_files():
     files, _ = folder_paths.recursive_search(folder_paths.get_output_directory())
-    return sorted((f.replace(os.sep, "/") for f in files if f.lower().endswith(EXTENSION)), reverse=True)
+    return sorted(
+        (f.replace(os.sep, "/") for f in files if f.lower().endswith(EXTENSION)),
+        reverse=True,
+    )
 
 
 def output_file_path(name):
@@ -67,7 +77,7 @@ def output_file_path(name):
     output_dir = os.path.abspath(folder_paths.get_output_directory())
     path = os.path.abspath(os.path.join(output_dir, name))
     if os.path.commonpath((output_dir, path)) != output_dir:
-        raise ValueError("{} is outside the output directory".format(name))
+        raise ValueError(f"{name} is outside the output directory")
     return path
 
 
@@ -79,7 +89,7 @@ class CardamonSaveLatent(io.ComfyNode):
             display_name="Save Latent (Output Dir)",
             category="cardamon/latent",
             description="Save a latent, including nested latents such as MiniMax H3 AV, to the output directory. "
-                        "Load it again with Load Latent (Output Dir).",
+            "Load it again with Load Latent (Output Dir).",
             inputs=[
                 io.Latent.Input("latent"),
                 io.String.Input("filename_prefix", default="latents/cardamon"),
@@ -91,9 +101,12 @@ class CardamonSaveLatent(io.ComfyNode):
 
     @classmethod
     def execute(cls, latent, filename_prefix) -> io.NodeOutput:
-        full_output_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
-            filename_prefix, folder_paths.get_output_directory())
-        file = "{}_{:05}_{}".format(filename, counter, EXTENSION)
+        full_output_folder, filename, counter, subfolder, _ = (
+            folder_paths.get_save_image_path(
+                filename_prefix, folder_paths.get_output_directory()
+            )
+        )
+        file = f"{filename}_{counter:05}_{EXTENSION}"
 
         metadata = {}
         if not args.disable_metadata and cls.hidden:
@@ -104,7 +117,10 @@ class CardamonSaveLatent(io.ComfyNode):
                     metadata[k] = json.dumps(v)
 
         save_latent(latent, os.path.join(full_output_folder, file), metadata)
-        return io.NodeOutput(latent, ui={"latents": [ui.SavedResult(file, subfolder, io.FolderType.output)]})
+        return io.NodeOutput(
+            latent,
+            ui={"latents": [ui.SavedResult(file, subfolder, io.FolderType.output)]},
+        )
 
 
 class CardamonLoadLatent(io.ComfyNode):
@@ -115,7 +131,7 @@ class CardamonLoadLatent(io.ComfyNode):
             display_name="Load Latent (Output Dir)",
             category="cardamon/latent",
             description="Load a .latent file from the output directory, newest first. Also reads files from the built-in Save Latent node. "
-                        "Refresh the node definitions (press R) to list newly saved files.",
+            "Refresh the node definitions (press R) to list newly saved files.",
             inputs=[io.Combo.Input("latent", options=output_latent_files())],
             outputs=[io.Latent.Output(display_name="latent")],
         )
@@ -135,7 +151,7 @@ class CardamonLoadLatent(io.ComfyNode):
         except ValueError as e:
             return str(e)
         if not os.path.isfile(path):
-            return "Latent file not found in the output directory: {}".format(latent)
+            return f"Latent file not found in the output directory: {latent}"
         return True
 
 

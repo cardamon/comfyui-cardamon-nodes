@@ -17,8 +17,6 @@ comfy_extras/nodes_minimax_h3.py):
 
 import math
 
-import torch
-
 import comfy.nested_tensor
 import node_helpers
 from comfy_api.latest import io
@@ -52,9 +50,13 @@ def valid_clip_frames(frames):
 
 def split_av_latent(latent, node_name):
     samples = latent["samples"]
-    if (not getattr(samples, "is_nested", False) or len(samples.tensors) != 2
-            or samples.tensors[0].ndim != 5 or samples.tensors[0].shape[1] != 24):
-        raise ValueError("{} expects a MiniMax H3 AV latent".format(node_name))
+    if (
+        not getattr(samples, "is_nested", False)
+        or len(samples.tensors) != 2
+        or samples.tensors[0].ndim != 5
+        or samples.tensors[0].shape[1] != 24
+    ):
+        raise ValueError(f"{node_name} expects a MiniMax H3 AV latent")
     return samples.tensors[0], samples.tensors[1]
 
 
@@ -66,19 +68,34 @@ class CardamonMiniMaxH3ExtractLatent(io.ComfyNode):
             display_name="Extract MiniMax H3 Latent Section",
             category="cardamon/minimax_h3",
             description="Cut a section, typically the last frames, out of a MiniMax H3 AV latent, to use as a latent guide. "
-                        "Sections start on the VAE's 17-frame chunk boundaries and are 1 or 17k+5 frames long.",
+            "Sections start on the VAE's 17-frame chunk boundaries and are 1 or 17k+5 frames long.",
             inputs=[
                 io.Latent.Input("latent"),
-                io.Int.Input("start_frame", default=-22, min=-9999, max=9999,
-                             tooltip="First frame of the section, snapped down to a multiple of 17. "
-                                     "Negative values count from the end of the video."),
-                io.Int.Input("length", default=0, min=0, max=9999,
-                             tooltip="Frames to extract, snapped down to 1 or 17k+5 (5, 22, 39...). 0 extracts up to the end of the video."),
+                io.Int.Input(
+                    "start_frame",
+                    default=-22,
+                    min=-9999,
+                    max=9999,
+                    tooltip="First frame of the section, snapped down to a multiple of 17. "
+                    "Negative values count from the end of the video.",
+                ),
+                io.Int.Input(
+                    "length",
+                    default=0,
+                    min=0,
+                    max=9999,
+                    tooltip="Frames to extract, snapped down to 1 or 17k+5 (5, 22, 39...). 0 extracts up to the end of the video.",
+                ),
             ],
             outputs=[
                 io.Latent.Output(display_name="latent"),
-                io.Int.Output(display_name="start_frame", tooltip="Snapped start frame in the source video."),
-                io.Int.Output(display_name="length", tooltip="Snapped section length in frames."),
+                io.Int.Output(
+                    display_name="start_frame",
+                    tooltip="Snapped start frame in the source video.",
+                ),
+                io.Int.Output(
+                    display_name="length", tooltip="Snapped section length in frames."
+                ),
             ],
         )
 
@@ -89,19 +106,25 @@ class CardamonMiniMaxH3ExtractLatent(io.ComfyNode):
 
         resolved = start_frame if start_frame >= 0 else total_frames + start_frame
         if not 0 <= resolved < total_frames:
-            raise ValueError("start_frame {} is outside the video's {} frames".format(start_frame, total_frames))
+            raise ValueError(
+                f"start_frame {start_frame} is outside the video's {total_frames} frames"
+            )
         chunk = resolved // CHUNK_FRAMES
         start = chunk * CHUNK_FRAMES
 
         available = total_frames - start
         frames = valid_clip_frames(min(length, available) if length > 0 else available)
         token_start = chunk * CHUNK_TOKENS
-        video = video[:, :, token_start:token_start + tokens_for_frames(frames)].clone()
+        video = video[
+            :, :, token_start : token_start + tokens_for_frames(frames)
+        ].clone()
 
         # Audio latents rarely line up with a chunk boundary: start on the next one and record the offset.
         offset = latent.get(AUDIO_FRAME_OFFSET_KEY, 0.0)
         audio_start = math.ceil(FRAME_RESCALE * (start - offset) - 1e-6)
-        audio_end = min(audio.shape[-1], round(FRAME_RESCALE * (start + frames - offset)))
+        audio_end = min(
+            audio.shape[-1], round(FRAME_RESCALE * (start + frames - offset))
+        )
         audio = audio[..., audio_start:audio_end].clone()
 
         out = {
@@ -119,56 +142,91 @@ class CardamonMiniMaxH3AddLatentGuide(io.ComfyNode):
             display_name="Add Latent Guide for MiniMax H3",
             category="cardamon/minimax_h3",
             description="Like Add Guide for MiniMax H3, but anchors an already encoded frame, clip and/or audio "
-                        "(e.g. from Extract MiniMax H3 Latent Section). Chain several nodes to anchor several guides.",
+            "(e.g. from Extract MiniMax H3 Latent Section). Chain several nodes to anchor several guides.",
             inputs=[
                 io.Conditioning.Input("positive"),
-                io.Latent.Input("latent", tooltip="The MiniMax H3 AV latent that will be sampled."),
-                io.Latent.Input("guide", tooltip="MiniMax H3 AV latent to anchor. Its width and height must match the target latent. "
-                                                 "Clips are cropped down to 1 or 17k+5 frames. Only the first batch item is used."),
-                io.Int.Input("frame_idx", default=0, min=-9999, max=9999,
-                             tooltip="Frame to anchor the guide's first frame at. Negative values count from the end of the video."),
+                io.Latent.Input(
+                    "latent", tooltip="The MiniMax H3 AV latent that will be sampled."
+                ),
+                io.Latent.Input(
+                    "guide",
+                    tooltip="MiniMax H3 AV latent to anchor. Its width and height must match the target latent. "
+                    "Clips are cropped down to 1 or 17k+5 frames. Only the first batch item is used.",
+                ),
+                io.Int.Input(
+                    "frame_idx",
+                    default=0,
+                    min=-9999,
+                    max=9999,
+                    tooltip="Frame to anchor the guide's first frame at. Negative values count from the end of the video.",
+                ),
                 io.Boolean.Input("use_video", default=True),
-                io.Boolean.Input("use_audio", default=True, tooltip="Anchor the guide's audio as well, cropped to the video's remaining duration."),
+                io.Boolean.Input(
+                    "use_audio",
+                    default=True,
+                    tooltip="Anchor the guide's audio as well, cropped to the video's remaining duration.",
+                ),
             ],
             outputs=[io.Conditioning.Output(display_name="positive")],
         )
 
     @classmethod
-    def execute(cls, positive, latent, guide, frame_idx, use_video, use_audio) -> io.NodeOutput:
+    def execute(
+        cls, positive, latent, guide, frame_idx, use_video, use_audio
+    ) -> io.NodeOutput:
         video, audio = split_av_latent(latent, "CardamonMiniMaxH3AddLatentGuide")
-        guide_video, guide_audio = split_av_latent(guide, "CardamonMiniMaxH3AddLatentGuide (guide input)")
+        guide_video, guide_audio = split_av_latent(
+            guide, "CardamonMiniMaxH3AddLatentGuide (guide input)"
+        )
         if not use_video and not use_audio:
             raise ValueError("enable use_video and/or use_audio")
         frame_count = frames_for_tokens(video.shape[2])
         resolved = frame_idx if frame_idx >= 0 else frame_count + frame_idx
         if not 0 <= resolved < frame_count:
-            raise ValueError("frame_idx {} is outside the video's {} frames".format(frame_idx, frame_count))
+            raise ValueError(
+                f"frame_idx {frame_idx} is outside the video's {frame_count} frames"
+            )
 
         keyframes = list(positive[0][1].get("minimax_keyframes", []))
         existing = len(keyframes)
 
         if use_video:
             if guide_video.shape[3:] != video.shape[3:]:
-                raise ValueError("the guide is {}x{} but the target video is {}x{}".format(
-                    guide_video.shape[4] * 16, guide_video.shape[3] * 16, video.shape[4] * 16, video.shape[3] * 16))
+                raise ValueError(
+                    f"the guide is {guide_video.shape[4] * 16}x{guide_video.shape[3] * 16} "
+                    f"but the target video is {video.shape[4] * 16}x{video.shape[3] * 16}"
+                )
             guide_frames = valid_clip_frames(frames_for_tokens(guide_video.shape[2]))
             if resolved + guide_frames > frame_count:
-                raise ValueError("a {} frame guide at frame_idx {} does not fit in the video's {} frames".format(
-                    guide_frames, frame_idx, frame_count))
-            keyframes.append({"resolved_frame_index": resolved,
-                              "latent": guide_video[:1, :, :tokens_for_frames(guide_frames)]})
+                raise ValueError(
+                    f"a {guide_frames} frame guide at frame_idx {frame_idx} does not fit in the video's {frame_count} frames"
+                )
+            keyframes.append(
+                {
+                    "resolved_frame_index": resolved,
+                    "latent": guide_video[:1, :, : tokens_for_frames(guide_frames)],
+                }
+            )
 
         if use_audio and guide_audio.shape[-1] > 0:
             audio_frame = resolved + guide.get(AUDIO_FRAME_OFFSET_KEY, 0.0)
             max_rt = math.floor(audio.shape[-1] - FRAME_RESCALE * audio_frame)
             if max_rt < 1:
-                raise ValueError("frame_idx {} is past the end of the video's audio track".format(frame_idx))
-            keyframes.append({"resolved_frame_index": audio_frame,
-                              "audio_latent": guide_audio[:1, ..., :max_rt]})
+                raise ValueError(
+                    f"frame_idx {frame_idx} is past the end of the video's audio track"
+                )
+            keyframes.append(
+                {
+                    "resolved_frame_index": audio_frame,
+                    "audio_latent": guide_audio[:1, ..., :max_rt],
+                }
+            )
 
         if len(keyframes) == existing:
             raise ValueError("the guide has no audio to anchor; enable use_video")
-        positive = node_helpers.conditioning_set_values(positive, {"minimax_keyframes": keyframes})
+        positive = node_helpers.conditioning_set_values(
+            positive, {"minimax_keyframes": keyframes}
+        )
         return io.NodeOutput(positive)
 
 
