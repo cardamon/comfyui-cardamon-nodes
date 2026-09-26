@@ -17,11 +17,11 @@ comfy_extras/nodes_minimax_h3.py):
 
 import math
 
+import torch
+
 import comfy.nested_tensor
 import node_helpers
 from comfy_api.latest import io
-
-from .latent_files import empty_latent, is_empty_latent
 
 # Copied from comfy.ldm.minimax.model so this package still loads on ComfyUI builds without H3.
 FRAME_PER_TOKEN = (1, 4, 4, 4, 4)
@@ -48,6 +48,19 @@ def valid_clip_frames(frames):
     if frames < 5:
         return 1
     return frames - (frames - 5) % CHUNK_FRAMES
+
+
+def empty_latent():
+    """Placeholder for "no guide"; Add Latent Guide skips it."""
+    return {"samples": torch.zeros(0)}
+
+
+def is_empty_latent(latent):
+    # None: e.g. Start Loop's current_iteration_value on the first iteration
+    if latent is None:
+        return True
+    samples = latent["samples"]
+    return not getattr(samples, "is_nested", False) and samples.numel() == 0
 
 
 def split_av_latent(latent, node_name):
@@ -104,7 +117,7 @@ class CardamonMiniMaxH3ExtractLatent(io.ComfyNode):
     @classmethod
     def execute(cls, latent, start_frame, length) -> io.NodeOutput:
         if is_empty_latent(latent):
-            # Pass "no guide" through, e.g. for the first shot in a list.
+            # Pass "no guide" through, e.g. for the first shot in a loop.
             return io.NodeOutput(empty_latent(), 0, 0)
         video, audio = split_av_latent(latent, "CardamonMiniMaxH3ExtractLatent")
         total_frames = frames_for_tokens(video.shape[2])
@@ -157,7 +170,7 @@ class CardamonMiniMaxH3AddLatentGuide(io.ComfyNode):
                     "guide",
                     tooltip="MiniMax H3 AV latent to anchor. Its width and height must match the target latent. "
                     "Clips are cropped down to 1 or 17k+5 frames. Only the first batch item is used. "
-                    "An empty latent (from Load Latent List) adds no guide.",
+                    "An empty latent or no value (e.g. on a loop's first iteration) adds no guide.",
                 ),
                 io.Int.Input(
                     "frame_idx",

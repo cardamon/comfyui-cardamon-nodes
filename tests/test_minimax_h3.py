@@ -8,6 +8,7 @@ from cardamon_nodes.minimax_h3 import (
     CardamonMiniMaxH3AddLatentGuide,
     CardamonMiniMaxH3ExtractLatent,
     frames_for_tokens,
+    is_empty_latent,
     tokens_for_frames,
     valid_clip_frames,
 )
@@ -138,3 +139,11 @@ def test_guides_build_a_valid_model_layout():
     cond_rows = cond_video.shape[2] * cond_video.shape[3] * cond_video.shape[4] // 4
     audio_rows = keyframes[1]["audio_latent"].shape[-1] * 2
     assert layout.seq_len == 8 + cond_rows + audio_rows + audio.shape[-1] * 2 + video.shape[2] * video.shape[3] * video.shape[4] // 4
+
+
+@pytest.mark.parametrize("empty", [{"samples": torch.zeros(0)}, None], ids=["empty", "none"])
+def test_empty_guide_passes_through_extract_and_adds_no_guide(empty):
+    section, start, length = extract(empty, -22)
+    assert is_empty_latent(section) and (start, length) == (0, 0)
+    positive = [[torch.zeros(1, 1, 8), {}]]
+    assert add_guide(av_latent(124), section, positive=positive) is positive
