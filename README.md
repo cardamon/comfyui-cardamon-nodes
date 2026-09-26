@@ -28,6 +28,14 @@ To continue a generated video, extract its last frames (e.g. `start_frame` -22) 
 at `frame_idx` 0 of the next generation. The next video then starts with those frames, so skip
 the first `length` frames of its decoded output when joining the two videos.
 
+### Prompts
+
+- **Shot Prompts**: builds one prompt per shot from a template, for generating a longer video as a
+  series of shots. Every `{{ SHOT }}` in the template is replaced by the shot prompt, and an empty
+  template uses the shot prompts as they are. Connect a text node (e.g. *Text (Multiline)*) to
+  each shot input; a new input appears when the last one is connected, and empty shot prompts are
+  skipped. The output is a list, so the nodes it connects to run once per prompt.
+
 ### Latent files
 
 - **Save Latent (Output Dir)**: saves a latent to the output directory. Unlike the built-in
