@@ -6,18 +6,35 @@ so saved latents need not be moved to the input directory first.
 """
 
 import json
+import logging
 import os
+import re
 
 import comfy.nested_tensor
 import folder_paths
 import safetensors
 import safetensors.torch
+import torch
 from comfy.cli_args import args
 from comfy_api.latest import io, ui
 
 EXTENSION = ".latent"
 FORMAT_KEY = "cardamon_latent"
 FORMAT_VERSION = 1
+# Save Latent names files "<prefix>_<counter>_.latent"
+FILE_NUMBER = re.compile(r"_(\d+)_?\.latent$", re.IGNORECASE)
+
+logger = logging.getLogger(__name__)
+
+
+def empty_latent():
+    """Placeholder for "no latent" in a latent list; nodes that take a guide skip it."""
+    return {"samples": torch.zeros(0)}
+
+
+def is_empty_latent(latent):
+    samples = latent["samples"]
+    return not getattr(samples, "is_nested", False) and samples.numel() == 0
 
 
 def save_latent(latent, path, metadata=None):
@@ -79,6 +96,38 @@ def output_file_path(name):
     if os.path.commonpath((output_dir, path)) != output_dir:
         raise ValueError(f"{name} is outside the output directory")
     return path
+
+
+def first_item(value):
+    # List-input nodes get lists, but validation may pass the plain widget value.
+    return value[0] if isinstance(value, list) else value
+
+
+def numbered_latent_files(directory):
+    """Paths of the numbered .latent files in `directory`, in order of their number."""
+    if not os.path.isdir(directory):
+        return []
+    numbered = []
+    for name in os.listdir(directory):
+        match = FILE_NUMBER.search(name)
+        if match and os.path.isfile(os.path.join(directory, name)):
+            numbered.append((int(match.group(1)), name))
+    return [os.path.join(directory, name) for _, name in sorted(numbered)]
+
+
+def latest_latent_list(directory, count, start_with_empty):
+    """The `count` latents to guide `count` shots, padded at the end with empty latents."""
+    paths = numbered_latent_files(directory)[-count:] if count > 0 else []
+    latents = [load_latent(path) for path in paths]
+    if start_with_empty:
+        latents = [empty_latent()] + latents[: count - 1]
+    if len(latents) < count:
+        logger.warning(
+            f"{directory} has {len(paths)} numbered latents, "
+            f"padding the list of {count} with {count - len(latents)} empty latents"
+        )
+        latents += [empty_latent() for _ in range(count - len(latents))]
+    return latents
 
 
 class CardamonSaveLatent(io.ComfyNode):
@@ -155,4 +204,58 @@ class CardamonLoadLatent(io.ComfyNode):
         return True
 
 
-NODES = [CardamonSaveLatent, CardamonLoadLatent]
+class CardamonLoadLatentList(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="CardamonLoadLatentList",
+            display_name="Load Latent List (Output Dir)",
+            category="cardamon/latent",
+            description="Load the latest latents from a directory in the output directory, one per prompt, "
+            "as a list. The latest are the highest numbered files, as written by Save Latent (Output Dir). "
+            "Missing latents are filled in with empty latents, which guide nodes skip.",
+            inputs=[
+                io.String.Input(
+                    "prompts",
+                    force_input=True,
+                    tooltip="Only the number of prompts is used.",
+                ),
+                io.String.Input(
+                    "subdir",
+                    default="latents",
+                    tooltip="Directory in the output directory to load from. It should hold one numbered series of latents.",
+                ),
+                io.Boolean.Input(
+                    "start_with_empty",
+                    default=False,
+                    tooltip="Start the list with an empty latent and leave out the latest latent, "
+                    "so each prompt gets the latent of the prompt before it and the first starts fresh.",
+                ),
+            ],
+            outputs=[io.Latent.Output(display_name="latents", is_output_list=True)],
+            is_input_list=True,
+        )
+
+    @classmethod
+    def execute(cls, prompts, subdir, start_with_empty) -> io.NodeOutput:
+        directory = output_file_path(subdir[0])
+        return io.NodeOutput(
+            latest_latent_list(directory, len(prompts), start_with_empty[0])
+        )
+
+    @classmethod
+    def fingerprint_inputs(cls, subdir, **kwargs):
+        # Rerun whenever latents are added to or replaced in the directory.
+        paths = numbered_latent_files(output_file_path(first_item(subdir)))
+        return [(path, os.path.getmtime(path)) for path in paths]
+
+    @classmethod
+    def validate_inputs(cls, subdir, **kwargs):
+        try:
+            output_file_path(first_item(subdir))
+        except ValueError as e:
+            return str(e)
+        return True
+
+
+NODES = [CardamonSaveLatent, CardamonLoadLatent, CardamonLoadLatentList]

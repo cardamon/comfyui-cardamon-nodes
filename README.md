@@ -22,7 +22,8 @@ git clone https://github.com/cardamon/comfyui-cardamon-nodes.git
   their own. Outputs the snapped start frame and length.
 - **Add Latent Guide for MiniMax H3**: like the built-in *Add Guide for MiniMax H3*, but anchors an
   already encoded frame, clip and/or audio at a frame of the video being generated. The guide must
-  have the same width and height as the target latent.
+  have the same width and height as the target latent. An empty latent (see *Load Latent List*)
+  adds no guide, and *Extract* passes it through unchanged.
 
 To continue a generated video, extract its last frames (e.g. `start_frame` -22) and anchor them
 at `frame_idx` 0 of the next generation. The next video then starts with those frames, so skip
@@ -43,6 +44,16 @@ the first `length` frames of its decoded output when joining the two videos.
 - **Load Latent (Output Dir)**: loads a `.latent` file straight from the output directory, so it
   doesn't have to be moved to the input directory first. It also reads files saved by the built-in
   *Save Latent*. Refresh the node definitions (press R) to list newly saved files.
+- **Load Latent List (Output Dir)**: loads the latest latents from a directory in the output
+  directory as a list, one per prompt in its `prompts` input. The latest are the highest numbered
+  files, so the directory should hold one series saved with one *Save Latent* prefix. With
+  `start_with_empty`, the list starts with an empty latent and leaves out the latest one, so each
+  shot is guided by the previous shot and the first starts fresh. Missing latents (e.g. on the
+  first run) are filled in with empty latents at the end of the list.
+
+Each run moves a shot chain on by one shot: shot *n* continues from what shot *n*−1 produced in
+the previous run. With fixed seeds and unchanged prompts, a chain of *n* shots is complete after
+*n* runs.
 
 ## Tips
 

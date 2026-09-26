@@ -21,6 +21,8 @@ import comfy.nested_tensor
 import node_helpers
 from comfy_api.latest import io
 
+from .latent_files import empty_latent, is_empty_latent
+
 # Copied from comfy.ldm.minimax.model so this package still loads on ComfyUI builds without H3.
 FRAME_PER_TOKEN = (1, 4, 4, 4, 4)
 FRAME_RESCALE = 5.0 / 3.0
@@ -101,6 +103,9 @@ class CardamonMiniMaxH3ExtractLatent(io.ComfyNode):
 
     @classmethod
     def execute(cls, latent, start_frame, length) -> io.NodeOutput:
+        if is_empty_latent(latent):
+            # Pass "no guide" through, e.g. for the first shot in a list.
+            return io.NodeOutput(empty_latent(), 0, 0)
         video, audio = split_av_latent(latent, "CardamonMiniMaxH3ExtractLatent")
         total_frames = frames_for_tokens(video.shape[2])
 
@@ -151,7 +156,8 @@ class CardamonMiniMaxH3AddLatentGuide(io.ComfyNode):
                 io.Latent.Input(
                     "guide",
                     tooltip="MiniMax H3 AV latent to anchor. Its width and height must match the target latent. "
-                    "Clips are cropped down to 1 or 17k+5 frames. Only the first batch item is used.",
+                    "Clips are cropped down to 1 or 17k+5 frames. Only the first batch item is used. "
+                    "An empty latent (from Load Latent List) adds no guide.",
                 ),
                 io.Int.Input(
                     "frame_idx",
@@ -174,6 +180,8 @@ class CardamonMiniMaxH3AddLatentGuide(io.ComfyNode):
     def execute(
         cls, positive, latent, guide, frame_idx, use_video, use_audio
     ) -> io.NodeOutput:
+        if is_empty_latent(guide):
+            return io.NodeOutput(positive)
         video, audio = split_av_latent(latent, "CardamonMiniMaxH3AddLatentGuide")
         guide_video, guide_audio = split_av_latent(
             guide, "CardamonMiniMaxH3AddLatentGuide (guide input)"
