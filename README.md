@@ -48,16 +48,31 @@ the first `length` frames of its decoded output when joining the two videos.
 ## Generating shots in a loop
 
 ComfyUI's built-in *Start Loop* and *End Loop* nodes run the shots one after another in a single
-run, each continuing from the previous one:
+run, each continuing from the previous one. The example workflow
+[`example_workflows/minimax-h3-seamless-multishot.json`](example_workflows/minimax-h3-seamless-multishot.json)
+is set up like this:
 
-- *Shot Prompts* → *Start Loop* in `List` mode. Use `list_item` as the shot's prompt.
-- *Add Latent Guide for MiniMax H3*: connect `current_iteration_value` to `guide` and anchor it at
-  `frame_idx` 0. On the first shot there is no value yet, and no guide is added.
-- Sample the shot, then *Extract MiniMax H3 Latent Section* (e.g. `start_frame` -22) →
-  `next_iteration_value` of *End Loop*.
-- *Save Latent (Output Dir)* on the sampled latent, connected to one of End Loop's `termination`
-  inputs, saves each shot as soon as it has been generated.
-- Connect the sampled latent to `output_value` and enable `accumulate` to get all shots as a list.
+1. **Prompts:** *Shot Prompts* builds one prompt per shot from a template, and its list goes to
+   *Start Loop* in `List` mode. Everything between *Start Loop* and *End Loop* runs once per shot.
+2. **Guide from the previous shot:** *MiniMax H3 Image to Video* gets `list_item` as its prompt.
+   *Add Latent Guide for MiniMax H3* anchors `current_iteration_value` at `frame_idx` 0. On the
+   first shot there is nothing to continue from yet, so no guide is added.
+3. **Sample and pass on:** after sampling, *Extract MiniMax H3 Latent Section* (`start_frame` -22)
+   takes the shot's last frames. They go to End Loop's `next_iteration_value` and become the next
+   shot's guide.
+4. **Save as you go (optional):** *Save Latent (Output Dir)* saves each extracted section as soon
+   as its shot is done. It's connected to one of End Loop's `termination` inputs, which makes it
+   run on every iteration. The loop doesn't need it, because End Loop passes the section on
+   directly.
+5. **Decode after the loop:** the sampled latent goes to End Loop's `output_value` with
+   `accumulate` on, so End Loop outputs every shot as a list. *VAE Decode*, *VAE Decode Audio*,
+   *Create Video* and *Save Video* come after End Loop and run once per shot.
+
+Output nodes such as *Save Video* can't be inside the loop, because nothing can connect them to
+End Loop. If they are, ComfyUI refuses the run with "Loop body is not closed".
+
+Every shot is saved as its own video, and each shot after the first starts with the 22 frames it
+continues from. Skip those frames when joining the shots.
 
 ## Tips
 
