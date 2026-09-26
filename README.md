@@ -9,6 +9,7 @@ Clone this repo into your ComfyUI `custom_nodes` directory and restart ComfyUI:
 ```sh
 cd ComfyUI/custom_nodes
 git clone https://github.com/cardamon/comfyui-cardamon-nodes.git
+# or using ssh: git clone git@github.com:cardamon/comfyui-cardamon-nodes.git
 ```
 
 ## Nodes
@@ -34,6 +35,16 @@ the first `length` frames of its decoded output when joining the two videos.
 - **Load Latent (Output Dir)**: loads a `.latent` file straight from the output directory, so it
   doesn't have to be moved to the input directory first. It also reads files saved by the built-in
   *Save Latent*. Refresh the node definitions (press R) to list newly saved files.
+
+## Tips
+
+- **Trim after the VAE decode, not before.** The H3 video decoder decodes each 17-frame chunk
+  together with the start of the next one. A latent trimmed before decoding loses that context, so
+  the frames just before the cut decode differently than in the full video.
+- **For the smoothest audio, start sections at a multiple of 51 frames.** Audio latents run at 40
+  per second and video at 24 fps, so they only line up every 51 frames (every third 17-frame
+  chunk). At other start frames, the guide's audio begins up to about 25 ms after its first video
+  frame. For example, the last 22 frames of a 124-frame video start at frame 102 (2 × 51).
 
 ## Development
 
