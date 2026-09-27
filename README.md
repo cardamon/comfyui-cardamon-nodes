@@ -66,6 +66,13 @@ starts at a multiple of 51 frames.
   enables all; it shows a dash when only some are enabled. The strength applies to both the model
   and the text encoder.
 
+### Utilities
+
+- **Time**: a length or offset entered as `hh:mm:ss.fff`, `mm:ss.fff` or plain seconds, with any
+  number of decimals, and output as seconds (a float). Only the first field may be 60 or more
+  (`90:00` is 90 minutes), `,` also works as the decimal separator, and a leading `-` makes the
+  time negative. The node shows the seconds as you edit the time, without running it.
+
 ### Latent files
 
 - **Save Latent (Output Dir)**: saves a latent to the output directory. Unlike the built-in

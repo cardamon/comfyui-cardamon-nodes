@@ -9,6 +9,8 @@ import { api } from "../../scripts/api.js";
 const NODE_CLASS = "CardamonLoraStack";
 const ROW_HEIGHT = 24;
 const ROW_GAP = 2;
+// Space above and below the rows; the widget's height includes it.
+const ROWS_MARGIN = 2;
 
 const CSS = `
 .cardamon-lora-rows { display: flex; flex-direction: column; gap: ${ROW_GAP}px; font-size: 12px; }
@@ -115,7 +117,7 @@ function addLoras(node, names) {
 function rowsHeight(node) {
   // header, then one row per LoRA (or the "No LoRAs added" line)
   const count = Math.max(readStack(node).length, 1) + 1;
-  return count * ROW_HEIGHT + (count - 1) * ROW_GAP + 4;
+  return count * ROW_HEIGHT + (count - 1) * ROW_GAP + 2 * ROWS_MARGIN;
 }
 
 function renderHeader(node, stack) {
@@ -340,6 +342,7 @@ app.registerExtension({
     node.cardamonLoraRows = container;
     node.addDOMWidget("lora_rows", "cardamon_lora_rows", container, {
       serialize: false,
+      margin: ROWS_MARGIN,
       getMinHeight: () => rowsHeight(node),
       getMaxHeight: () => rowsHeight(node),
     });
