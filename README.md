@@ -37,6 +37,13 @@ the first `length` frames of its decoded output when joining the two videos.
   each shot input; a new input appears when the last one is connected, and empty shot prompts are
   skipped. The output is a list, so the nodes it connects to run once per prompt.
 
+### Video
+
+- **Join Shot Videos**: joins a list of shot videos, such as *Create Video*'s output after an
+  accumulating *End Loop*, into one video. It cuts `trim_frames` frames off the end of every shot
+  but the last: the frames the next shot continues from. Each shot's audio is cut at the same
+  point on the joined timeline, so it stays in sync however many shots there are.
+
 ### Latent files
 
 - **Save Latent (Output Dir)**: saves a latent to the output directory. Unlike the built-in
@@ -71,8 +78,9 @@ is set up like this:
 Output nodes such as *Save Video* can't be inside the loop, because nothing can connect them to
 End Loop. If they are, ComfyUI refuses the run with "Loop body is not closed".
 
-Every shot is saved as its own video, and each shot after the first starts with the 22 frames it
-continues from. Skip those frames when joining the shots.
+The example workflow saves every shot as its own video, and each shot after the first starts
+with the 22 frames it continues from. To get one seamless video instead, connect *Create Video*
+to *Join Shot Videos* with `trim_frames` 22, and that to *Save Video*.
 
 ## Tips
 
