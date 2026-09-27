@@ -51,7 +51,9 @@ the first `length` frames of its decoded output when joining the two videos.
   a LoRA to add it, or use *Add all* to add every LoRA in the current folder (not its subfolders).
   Each LoRA takes one row on the node, with an enable toggle, its name, its strength and a button
   to remove it. A disabled LoRA is not loaded at all, and keeps its strength for when it's enabled
-  again. The strength applies to both the model and the text encoder.
+  again. The checkbox next to *Add LoRA* disables all LoRAs when all are enabled, and otherwise
+  enables all; it shows a dash when only some are enabled. The strength applies to both the model
+  and the text encoder.
 
 ### Latent files
 

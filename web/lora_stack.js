@@ -1,6 +1,6 @@
-// UI for the LoRA Stack node (cardamon_nodes/loras.py): an Add LoRA button that opens a browser
-// over the loras directory, and one compact row per LoRA with an enable toggle, its name, strength
-// and a remove button. The stack itself lives in the node's hidden "loras" widget as JSON:
+// UI for the LoRA Stack node (cardamon_nodes/loras.py): a header with an enable/disable-all toggle
+// and an Add LoRA button that opens a browser over the loras directory, then one compact row per
+// LoRA with an enable toggle, its name, strength and a remove button. The stack itself lives in the node's hidden "loras" widget as JSON:
 // [{"name", "strength", "enabled"}]; entries without "enabled" are enabled.
 
 import { app } from "../../scripts/app.js";
@@ -12,6 +12,11 @@ const ROW_GAP = 2;
 
 const CSS = `
 .cardamon-lora-rows { display: flex; flex-direction: column; gap: ${ROW_GAP}px; font-size: 12px; }
+.cardamon-lora-add { flex: 1; min-width: 0; height: 22px; padding: 0; cursor: pointer;
+  background: var(--comfy-input-bg, #222); color: var(--input-text, #ddd);
+  border: 1px solid var(--border-color, #444); border-radius: 4px; font-size: 12px; }
+.cardamon-lora-add:hover { border-color: var(--input-text, #ddd); }
+.cardamon-lora-toggle:disabled { cursor: default; opacity: 0.4; }
 .cardamon-lora-empty { color: var(--descrip-text, #999); padding: 2px 4px; }
 .cardamon-lora-row { display: flex; align-items: center; gap: 4px; height: ${ROW_HEIGHT}px; }
 .cardamon-lora-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -108,15 +113,42 @@ function addLoras(node, names) {
 // ---- rows on the node --------------------------------------------------------------------------
 
 function rowsHeight(node) {
-  const count = Math.max(readStack(node).length, 1);
+  // header, then one row per LoRA (or the "No LoRAs added" line)
+  const count = Math.max(readStack(node).length, 1) + 1;
   return count * ROW_HEIGHT + (count - 1) * ROW_GAP + 4;
+}
+
+function renderHeader(node, stack) {
+  const header = element("div", "cardamon-lora-row");
+
+  const enabledCount = stack.filter((entry) => entry.enabled !== false).length;
+  const allEnabled = stack.length > 0 && enabledCount === stack.length;
+  const toggleAll = element("input", "cardamon-lora-toggle");
+  toggleAll.type = "checkbox";
+  toggleAll.checked = allEnabled;
+  toggleAll.indeterminate = enabledCount > 0 && !allEnabled;
+  toggleAll.disabled = stack.length === 0;
+  toggleAll.title = allEnabled ? "Disable all LoRAs" : "Enable all LoRAs";
+  toggleAll.addEventListener("change", () => {
+    // All enabled: disable all. None or some enabled: enable all.
+    const current = readStack(node);
+    const enable = !current.every((entry) => entry.enabled !== false);
+    for (const entry of current) entry.enabled = enable;
+    writeStack(node, current);
+  });
+
+  const add = element("button", "cardamon-lora-add", "Add LoRA");
+  add.addEventListener("click", () => openBrowser(node));
+
+  header.append(toggleAll, add);
+  return header;
 }
 
 function renderRows(node) {
   const container = node.cardamonLoraRows;
   if (!container) return;
   const stack = readStack(node);
-  container.replaceChildren();
+  container.replaceChildren(renderHeader(node, stack));
   if (stack.length === 0) {
     container.append(element("div", "cardamon-lora-empty", "No LoRAs added"));
   }
@@ -303,9 +335,6 @@ app.registerExtension({
       hidden.options = { ...hidden.options, hidden: true };
       hidden.computeSize = () => [0, -4];
     }
-
-    const button = node.addWidget("button", "add_lora", null, () => openBrowser(node), { serialize: false });
-    button.label = "Add LoRA";
 
     const container = element("div", "cardamon-lora-rows");
     node.cardamonLoraRows = container;
