@@ -251,4 +251,73 @@ class CardamonMiniMaxH3AddLatentGuide(io.ComfyNode):
         return io.NodeOutput(positive)
 
 
-NODES = [CardamonMiniMaxH3ExtractLatent, CardamonMiniMaxH3AddLatentGuide]
+class CardamonMiniMaxH3PrependLatent(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="CardamonMiniMaxH3PrependLatent",
+            display_name="Prepend MiniMax H3 Latent Section",
+            category="cardamon/minimax_h3",
+            description="Write a latent section (e.g. the previous shot's last frames) into the first frames of a MiniMax H3 latent, "
+            "with a noise mask that keeps it unchanged while the rest is generated. Unlike a latent guide, the section "
+            "is part of the video itself, so it doesn't compete with reference videos. Connect the output to the sampler.",
+            inputs=[
+                io.Latent.Input(
+                    "latent",
+                    tooltip="The MiniMax H3 AV latent to sample, e.g. from MiniMax H3 Image to Video or Reference to Video. "
+                    "It sets the video's size and total length, including the section.",
+                ),
+                io.Latent.Input(
+                    "section",
+                    tooltip="MiniMax H3 AV latent section to start the video with, with the same width and height. "
+                    "An empty latent or no value (e.g. on a loop's first iteration) leaves the latent unchanged.",
+                ),
+            ],
+            outputs=[io.Latent.Output(display_name="latent")],
+        )
+
+    @classmethod
+    def execute(cls, latent, section) -> io.NodeOutput:
+        if is_empty_latent(section):
+            return io.NodeOutput(latent)
+        video, audio = split_av_latent(latent, "CardamonMiniMaxH3PrependLatent")
+        section_video, section_audio = split_av_latent(section, "CardamonMiniMaxH3PrependLatent (section input)")
+        if "noise_mask" in latent:
+            raise ValueError("the latent already has a noise mask")
+        if section_video.shape[3:] != video.shape[3:]:
+            raise ValueError(
+                f"the section is {section_video.shape[4] * 16}x{section_video.shape[3] * 16} "
+                f"but the latent is {video.shape[4] * 16}x{video.shape[3] * 16}"
+            )
+        section_frames = valid_clip_frames(frames_for_tokens(section_video.shape[2]))
+        tokens = tokens_for_frames(section_frames)
+        if tokens >= video.shape[2]:
+            raise ValueError(
+                f"the {section_frames} frame section leaves no frames to generate "
+                f"in the latent's {frames_for_tokens(video.shape[2])} frames"
+            )
+
+        video = video.clone()
+        video[:, :, :tokens] = section_video[:1, :, :tokens].to(video)
+        # 0 keeps a token as it is, 1 generates it
+        video_mask = torch.ones((video.shape[0], 1) + video.shape[2:], device=video.device)
+        video_mask[:, :, :tokens] = 0.0
+
+        audio = audio.clone()
+        audio_mask = torch.ones((audio.shape[0], 1) + audio.shape[2:], device=audio.device)
+        # The section's audio may start slightly after its first frame; place it at the nearest audio latent.
+        audio_start = round(FRAME_RESCALE * section.get(AUDIO_FRAME_OFFSET_KEY, 0.0))
+        audio_end = min(audio.shape[-1], audio_start + section_audio.shape[-1])
+        if audio_end > audio_start:
+            audio[..., audio_start:audio_end] = section_audio[:1, ..., : audio_end - audio_start].to(audio)
+            audio_mask[..., audio_start:audio_end] = 0.0
+
+        return io.NodeOutput(
+            {
+                "samples": comfy.nested_tensor.NestedTensor((video, audio)),
+                "noise_mask": comfy.nested_tensor.NestedTensor((video_mask, audio_mask)),
+            }
+        )
+
+
+NODES = [CardamonMiniMaxH3ExtractLatent, CardamonMiniMaxH3AddLatentGuide, CardamonMiniMaxH3PrependLatent]

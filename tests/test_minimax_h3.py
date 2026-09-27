@@ -7,6 +7,7 @@ from cardamon_nodes.minimax_h3 import (
     FRAME_RESCALE,
     CardamonMiniMaxH3AddLatentGuide,
     CardamonMiniMaxH3ExtractLatent,
+    CardamonMiniMaxH3PrependLatent,
     frames_for_tokens,
     is_empty_latent,
     tokens_for_frames,
@@ -147,3 +148,79 @@ def test_empty_guide_passes_through_extract_and_adds_no_guide(empty):
     assert is_empty_latent(section) and (start, length) == (0, 0)
     positive = [[torch.zeros(1, 1, 8), {}]]
     assert add_guide(av_latent(124), section, positive=positive) is positive
+
+
+def prepend(latent, section):
+    return CardamonMiniMaxH3PrependLatent.execute(latent, section).args[0]
+
+
+def zero_av_latent(frames, height=64, width=96):
+    video = torch.zeros(1, 24, tokens_for_frames(frames), height // 16, width // 16)
+    audio = torch.zeros(1, 32, 2, round(frames / 24 * 40))
+    return {"samples": comfy.nested_tensor.NestedTensor((video, audio))}
+
+
+def test_prepend_writes_section_and_masks_it():
+    section, _, _ = extract(av_latent(124), -22)  # starts at frame 102, audio exactly aligned
+    out = prepend(zero_av_latent(226), section)
+    video, audio = out["samples"].tensors
+    video_mask, audio_mask = out["noise_mask"].tensors
+    assert video_mask.shape == (1, 1) + video.shape[2:] and audio_mask.shape == (1, 1) + audio.shape[2:]
+    assert video[0, 0, :, 0, 0].tolist()[:8] == [30, 31, 32, 33, 34, 35, 36, 0]
+    assert video_mask[0, 0, :, 0, 0].tolist()[:8] == [0, 0, 0, 0, 0, 0, 0, 1]
+    section_audio = section["samples"].tensors[1]
+    assert torch.equal(audio[..., : section_audio.shape[-1]], section_audio)
+    assert audio_mask[0, 0, 0].tolist() == [0.0] * section_audio.shape[-1] + [1.0] * (audio.shape[-1] - section_audio.shape[-1])
+
+
+def test_prepend_places_offset_audio_at_the_nearest_latent():
+    section, _, _ = extract(av_latent(124), 17, 22)  # frame 17: audio starts 0.4 frames later
+    audio_mask = prepend(zero_av_latent(226), section)["noise_mask"].tensors[1]
+    kept = (audio_mask[0, 0, 0] == 0).nonzero().flatten().tolist()
+    assert kept[0] == 1 and len(kept) == section["samples"].tensors[1].shape[-1]
+
+
+@pytest.mark.parametrize("empty", [{"samples": torch.zeros(0)}, None], ids=["empty", "none"])
+def test_prepend_without_section_passes_latent_through(empty):
+    latent = zero_av_latent(226)
+    assert prepend(latent, empty) is latent
+
+
+def test_prepend_rejects_mismatched_or_too_long_sections():
+    section, _, _ = extract(av_latent(124, width=128), -22)
+    with pytest.raises(ValueError, match="128x64"):
+        prepend(zero_av_latent(226), section)
+    section, _, _ = extract(av_latent(124), 0, 124)
+    with pytest.raises(ValueError, match="no frames to generate"):
+        prepend(zero_av_latent(124), section)
+    latent = zero_av_latent(226)
+    latent["noise_mask"] = torch.ones(1)
+    with pytest.raises(ValueError, match="noise mask"):
+        prepend(latent, extract(av_latent(124), -22)[0])
+
+
+def test_prepend_mask_keeps_exactly_the_section_tokens_in_the_model():
+    import types
+
+    import comfy.model_base
+    import comfy.sampler_helpers
+    import comfy.utils
+    from comfy.ldm.minimax.model import mask_row_values
+
+    section, _, _ = extract(av_latent(124), -22)
+    out = prepend(zero_av_latent(226), section)
+    shapes = [t.shape for t in out["samples"].tensors]
+    # what the sampler does with a nested noise mask
+    masks = [comfy.sampler_helpers.prepare_mask(m, shape, "cpu") for m, shape in zip(out["noise_mask"].tensors, shapes)]
+    packed, latent_shapes = comfy.utils.pack_latents(masks)
+    # what the H3 model does with it
+    h3 = types.SimpleNamespace(diffusion_model=types.SimpleNamespace(patch_size=(1, 2, 2)))
+    h3._pool_masks_to_token_grid = types.MethodType(comfy.model_base.MiniMaxH3._pool_masks_to_token_grid, h3)
+    h3._token_grid_masks = types.MethodType(comfy.model_base.MiniMaxH3._token_grid_masks, h3)
+    values = comfy.model_base.MiniMaxH3._denoise_mask_values(h3, packed, latent_shapes)
+    video = shapes[0]
+    rows = mask_row_values(values["denoise_mask"][0, 0], video[2], video[3], video[4]).view(video[2], -1)
+    assert rows[:7].max() == 0 and rows[7:].min() == 1
+    audio_rows = values["audio_denoise_mask"][0, 0]  # [channel, audio latent]
+    kept = section["samples"].tensors[1].shape[-1]
+    assert audio_rows[:, :kept].max() == 0 and audio_rows[:, kept:].min() == 1

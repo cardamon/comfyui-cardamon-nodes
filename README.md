@@ -24,10 +24,21 @@ git clone https://github.com/cardamon/comfyui-cardamon-nodes.git
   already encoded frame, clip and/or audio at a frame of the video being generated. The guide must
   have the same width and height as the target latent. An empty guide (e.g. on a loop's first
   iteration) adds no guide, and *Extract* passes it through unchanged.
+- **Prepend MiniMax H3 Latent Section**: writes a section into the first frames of the latent to
+  sample, e.g. the one from *MiniMax H3 Image to Video* or *Reference to Video*, and adds a noise
+  mask that keeps the section unchanged while the rest is generated. The latent sets the video's
+  size and total length, section included. An empty section leaves the latent unchanged.
 
-To continue a generated video, extract its last frames (e.g. `start_frame` -22) and anchor them
-at `frame_idx` 0 of the next generation. The next video then starts with those frames, so skip
-the first `length` frames of its decoded output when joining the two videos.
+To continue a generated video, extract its last frames (e.g. `start_frame` -22) and either anchor
+them at `frame_idx` 0 of the next generation with *Add Latent Guide*, or put them in front of it
+with *Prepend*. Either way, the next video starts with those frames, so skip them when joining the
+two videos.
+
+*Add Latent Guide* adds the section as extra conditioning next to the video. With the
+reference model, that competes with reference videos, e.g. when editing a video. *Prepend* makes
+the section part of the video itself, so use it for those tasks. With *Prepend*, the section's
+audio lands on the nearest audio latent, which can be up to about 12 ms off unless the section
+starts at a multiple of 51 frames.
 
 ### Prompts
 
