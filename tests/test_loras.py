@@ -62,3 +62,19 @@ def test_invalid_stack_is_reported():
     assert "not valid JSON" in CardamonLoraStack.validate_inputs("[{")
     with pytest.raises(ValueError):
         parse_stack("[{")
+
+
+def test_disabled_loras_are_not_loaded_or_required(applied):
+    loras = json.dumps([
+        {"name": "style/film.safetensors", "strength": 0.8, "enabled": False},
+        {"name": "gone.safetensors", "strength": 1.0, "enabled": False},
+        {"name": "detail.safetensors", "strength": 0.5, "enabled": True},
+    ])
+    assert CardamonLoraStack.validate_inputs(loras) is True
+    CardamonLoraStack.execute("model", loras)
+    assert applied == [("weights:/loras/detail.safetensors", 0.5, 0.5, False)]
+
+
+def test_entries_without_enabled_are_enabled(applied):
+    # Stacks saved before the toggle existed
+    assert parse_stack(stack(("detail.safetensors", 1.0))) == [("detail.safetensors", 1.0)]

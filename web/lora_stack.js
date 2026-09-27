@@ -1,6 +1,7 @@
 // UI for the LoRA Stack node (cardamon_nodes/loras.py): an Add LoRA button that opens a browser
-// over the loras directory, and one compact row per LoRA with its name, strength and a remove button.
-// The stack itself lives in the node's hidden "loras" widget as JSON: [{"name", "strength"}].
+// over the loras directory, and one compact row per LoRA with an enable toggle, its name, strength
+// and a remove button. The stack itself lives in the node's hidden "loras" widget as JSON:
+// [{"name", "strength", "enabled"}]; entries without "enabled" are enabled.
 
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
@@ -15,7 +16,9 @@ const CSS = `
 .cardamon-lora-row { display: flex; align-items: center; gap: 4px; height: ${ROW_HEIGHT}px; }
 .cardamon-lora-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--input-text, #ddd); padding-left: 4px; }
-.cardamon-lora-row.off .cardamon-lora-name { opacity: 0.5; }
+.cardamon-lora-row.off .cardamon-lora-name, .cardamon-lora-row.off .cardamon-lora-strength { opacity: 0.4; }
+.cardamon-lora-toggle { margin: 0 0 0 2px; width: 14px; height: 14px; flex: none; cursor: pointer;
+  accent-color: var(--p-primary-color, #4a9eff); }
 .cardamon-lora-strength { width: 56px; height: 20px; box-sizing: border-box; padding: 0 4px; text-align: right;
   background: var(--comfy-input-bg, #222); color: var(--input-text, #ddd);
   border: 1px solid var(--border-color, #444); border-radius: 4px; }
@@ -97,7 +100,7 @@ function addLoras(node, names) {
   const stack = readStack(node);
   const present = new Set(stack.map((entry) => entry.name));
   for (const name of names) {
-    if (!present.has(name)) stack.push({ name, strength: 1.0 });
+    if (!present.has(name)) stack.push({ name, strength: 1.0, enabled: true });
   }
   writeStack(node, stack);
 }
@@ -119,7 +122,18 @@ function renderRows(node) {
   }
   stack.forEach((entry, index) => {
     const row = element("div", "cardamon-lora-row");
-    row.classList.toggle("off", Number(entry.strength) === 0);
+    const enabled = entry.enabled !== false;
+    row.classList.toggle("off", !enabled);
+
+    const toggle = element("input", "cardamon-lora-toggle");
+    toggle.type = "checkbox";
+    toggle.checked = enabled;
+    toggle.title = enabled ? "Enabled: click to disable (the LoRA is not loaded at all)" : "Disabled: click to enable";
+    toggle.addEventListener("change", () => {
+      const current = readStack(node);
+      current[index].enabled = toggle.checked;
+      writeStack(node, current);
+    });
 
     const name = element("span", "cardamon-lora-name", displayName(entry.name));
     name.title = entry.name;
@@ -128,7 +142,7 @@ function renderRows(node) {
     strength.type = "number";
     strength.step = "0.05";
     strength.value = String(entry.strength);
-    strength.title = "Strength (0 skips this LoRA)";
+    strength.title = "Strength";
     strength.addEventListener("change", () => {
       const value = parseFloat(strength.value);
       const current = readStack(node);
@@ -148,7 +162,7 @@ function renderRows(node) {
       writeStack(node, current);
     });
 
-    row.append(name, strength, remove);
+    row.append(toggle, name, strength, remove);
     container.append(row);
   });
   // Grow or shrink the node to fit its rows.

@@ -9,12 +9,19 @@ from comfy_api.latest import io
 
 
 def parse_stack(loras):
-    """The stack as (name, strength) pairs, from the JSON the node's UI stores."""
+    """The enabled LoRAs as (name, strength) pairs, from the JSON the node's UI stores.
+
+    Disabled LoRAs are left out entirely, so they are neither loaded nor required to exist.
+    """
     try:
         entries = json.loads(loras or "[]")
     except json.JSONDecodeError as e:
         raise ValueError(f"the LoRA stack is not valid JSON: {e}") from e
-    return [(entry["name"], float(entry["strength"])) for entry in entries]
+    return [
+        (entry["name"], float(entry["strength"]))
+        for entry in entries
+        if entry.get("enabled", True)
+    ]
 
 
 class CardamonLoraStack(io.ComfyNode):
@@ -25,7 +32,7 @@ class CardamonLoraStack(io.ComfyNode):
             display_name="LoRA Stack",
             category="cardamon/loaders",
             description="Apply several LoRAs in order. Add them with the Add LoRA button, which browses the loras directory. "
-            "LoRAs with strength 0 are skipped.",
+            "Disabled LoRAs are not loaded at all.",
             inputs=[
                 io.Model.Input("model"),
                 io.Clip.Input("clip", optional=True, tooltip="Also apply the LoRAs to the text encoder, at the same strength."),
@@ -39,7 +46,7 @@ class CardamonLoraStack(io.ComfyNode):
     def execute(cls, model, loras, clip=None) -> io.NodeOutput:
         for name, strength in parse_stack(loras):
             if strength == 0:
-                continue
+                continue  # no effect, so don't spend time loading it
             path = folder_paths.get_full_path_or_raise("loras", name)
             lora, metadata = comfy.utils.load_torch_file(path, safe_load=True, return_metadata=True)
             model, clip = comfy.sd.load_lora_for_models(model, clip, lora, strength, strength, lora_metadata=metadata)

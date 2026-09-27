@@ -49,8 +49,9 @@ the first `length` frames of its decoded output when joining the two videos.
 - **LoRA Stack**: applies several LoRAs to a model, and to a text encoder if `clip` is connected.
   *Add LoRA* opens a browser over the `loras` model directory: click a folder to open it, click
   a LoRA to add it, or use *Add all* to add every LoRA in the current folder (not its subfolders).
-  Each LoRA takes one row on the node, with its name, its strength and a button to remove it. The
-  strength applies to both the model and the text encoder, and LoRAs at strength 0 are skipped.
+  Each LoRA takes one row on the node, with an enable toggle, its name, its strength and a button
+  to remove it. A disabled LoRA is not loaded at all, and keeps its strength for when it's enabled
+  again. The strength applies to both the model and the text encoder.
 
 ### Latent files
 
