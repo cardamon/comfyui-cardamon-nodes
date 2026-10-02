@@ -66,6 +66,18 @@ starts at a multiple of 51 frames.
   enables all; it shows a dash when only some are enabled. The strength applies to both the model
   and the text encoder.
 
+### Images
+
+- **Stitch Images (Grid)**: like the core *Stitch Images*, but for any number of images (a new
+  input appears as soon as the last one is connected), wrapping onto new rows or columns after
+  `wrap_after` images. With `right`, images run from left to right and rows are aligned left;
+  with `left`, image 1 is at the right and rows are aligned right. `down` and `up` do the same
+  with columns, aligned at the top or bottom. Rows stack top to bottom and columns left to right.
+  `match_image_size` resizes every image to the size of image 1. The spacing color also fills any
+  empty area. If it is transparent, or an image has alpha, the output has an alpha channel.
+  Set the transparency with the color picker's alpha slider in *Nodes 2.0* mode; the classic
+  canvas mode's picker doesn't have one.
+
 ### Utilities
 
 - **Time**: a length or offset entered as `hh:mm:ss.fff`, `mm:ss.fff` or plain seconds, with any
