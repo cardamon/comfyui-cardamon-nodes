@@ -17,10 +17,9 @@ comfy_extras/nodes_minimax_h3.py):
 
 import math
 
-import torch
-
 import comfy.nested_tensor
 import node_helpers
+import torch
 from comfy_api.latest import io
 
 # Copied from comfy.ldm.minimax.model so this package still loads on ComfyUI builds without H3.
@@ -75,13 +74,13 @@ def split_av_latent(latent, node_name):
     return samples.tensors[0], samples.tensors[1]
 
 
-class CardamonMiniMaxH3ExtractLatent(io.ComfyNode):
+class CardamonNodesMiniMaxH3ExtractLatent(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonMiniMaxH3ExtractLatent",
+            node_id="CardamonNodesMiniMaxH3ExtractLatent",
             display_name="Extract MiniMax H3 Latent Section",
-            category="cardamon/minimax_h3",
+            category="Cardamon Nodes/minimax_h3",
             description="Cut a section, typically the last frames, out of a MiniMax H3 AV latent, to use as a latent guide. "
             "Sections start on the VAE's 17-frame chunk boundaries and are 1 or 17k+5 frames long.",
             inputs=[
@@ -119,7 +118,7 @@ class CardamonMiniMaxH3ExtractLatent(io.ComfyNode):
         if is_empty_latent(latent):
             # Pass "no guide" through, e.g. for the first shot in a loop.
             return io.NodeOutput(empty_latent(), 0, 0)
-        video, audio = split_av_latent(latent, "CardamonMiniMaxH3ExtractLatent")
+        video, audio = split_av_latent(latent, "CardamonNodesMiniMaxH3ExtractLatent")
         total_frames = frames_for_tokens(video.shape[2])
 
         resolved = start_frame if start_frame >= 0 else total_frames + start_frame
@@ -152,13 +151,13 @@ class CardamonMiniMaxH3ExtractLatent(io.ComfyNode):
         return io.NodeOutput(out, start, frames)
 
 
-class CardamonMiniMaxH3AddLatentGuide(io.ComfyNode):
+class CardamonNodesMiniMaxH3AddLatentGuide(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonMiniMaxH3AddLatentGuide",
+            node_id="CardamonNodesMiniMaxH3AddLatentGuide",
             display_name="Add Latent Guide for MiniMax H3",
-            category="cardamon/minimax_h3",
+            category="Cardamon Nodes/minimax_h3",
             description="Like Add Guide for MiniMax H3, but anchors an already encoded frame, clip and/or audio "
             "(e.g. from Extract MiniMax H3 Latent Section). Chain several nodes to anchor several guides.",
             inputs=[
@@ -195,9 +194,9 @@ class CardamonMiniMaxH3AddLatentGuide(io.ComfyNode):
     ) -> io.NodeOutput:
         if is_empty_latent(guide):
             return io.NodeOutput(positive)
-        video, audio = split_av_latent(latent, "CardamonMiniMaxH3AddLatentGuide")
+        video, audio = split_av_latent(latent, "CardamonNodesMiniMaxH3AddLatentGuide")
         guide_video, guide_audio = split_av_latent(
-            guide, "CardamonMiniMaxH3AddLatentGuide (guide input)"
+            guide, "CardamonNodesMiniMaxH3AddLatentGuide (guide input)"
         )
         if not use_video and not use_audio:
             raise ValueError("enable use_video and/or use_audio")
@@ -251,13 +250,13 @@ class CardamonMiniMaxH3AddLatentGuide(io.ComfyNode):
         return io.NodeOutput(positive)
 
 
-class CardamonMiniMaxH3PrependLatent(io.ComfyNode):
+class CardamonNodesMiniMaxH3PrependLatent(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonMiniMaxH3PrependLatent",
+            node_id="CardamonNodesMiniMaxH3PrependLatent",
             display_name="Prepend MiniMax H3 Latent Section",
-            category="cardamon/minimax_h3",
+            category="Cardamon Nodes/minimax_h3",
             description="Write a latent section (e.g. the previous shot's last frames) into the first frames of a MiniMax H3 latent, "
             "with a noise mask that keeps it unchanged while the rest is generated. Unlike a latent guide, the section "
             "is part of the video itself, so it doesn't compete with reference videos. Connect the output to the sampler.",
@@ -280,8 +279,10 @@ class CardamonMiniMaxH3PrependLatent(io.ComfyNode):
     def execute(cls, latent, section) -> io.NodeOutput:
         if is_empty_latent(section):
             return io.NodeOutput(latent)
-        video, audio = split_av_latent(latent, "CardamonMiniMaxH3PrependLatent")
-        section_video, section_audio = split_av_latent(section, "CardamonMiniMaxH3PrependLatent (section input)")
+        video, audio = split_av_latent(latent, "CardamonNodesMiniMaxH3PrependLatent")
+        section_video, section_audio = split_av_latent(
+            section, "CardamonNodesMiniMaxH3PrependLatent (section input)"
+        )
         if "noise_mask" in latent:
             raise ValueError("the latent already has a noise mask")
         if section_video.shape[3:] != video.shape[3:]:
@@ -300,24 +301,36 @@ class CardamonMiniMaxH3PrependLatent(io.ComfyNode):
         video = video.clone()
         video[:, :, :tokens] = section_video[:1, :, :tokens].to(video)
         # 0 keeps a token as it is, 1 generates it
-        video_mask = torch.ones((video.shape[0], 1) + video.shape[2:], device=video.device)
+        video_mask = torch.ones(
+            (video.shape[0], 1) + video.shape[2:], device=video.device
+        )
         video_mask[:, :, :tokens] = 0.0
 
         audio = audio.clone()
-        audio_mask = torch.ones((audio.shape[0], 1) + audio.shape[2:], device=audio.device)
+        audio_mask = torch.ones(
+            (audio.shape[0], 1) + audio.shape[2:], device=audio.device
+        )
         # The section's audio may start slightly after its first frame; place it at the nearest audio latent.
         audio_start = round(FRAME_RESCALE * section.get(AUDIO_FRAME_OFFSET_KEY, 0.0))
         audio_end = min(audio.shape[-1], audio_start + section_audio.shape[-1])
         if audio_end > audio_start:
-            audio[..., audio_start:audio_end] = section_audio[:1, ..., : audio_end - audio_start].to(audio)
+            audio[..., audio_start:audio_end] = section_audio[
+                :1, ..., : audio_end - audio_start
+            ].to(audio)
             audio_mask[..., audio_start:audio_end] = 0.0
 
         return io.NodeOutput(
             {
                 "samples": comfy.nested_tensor.NestedTensor((video, audio)),
-                "noise_mask": comfy.nested_tensor.NestedTensor((video_mask, audio_mask)),
+                "noise_mask": comfy.nested_tensor.NestedTensor(
+                    (video_mask, audio_mask)
+                ),
             }
         )
 
 
-NODES = [CardamonMiniMaxH3ExtractLatent, CardamonMiniMaxH3AddLatentGuide, CardamonMiniMaxH3PrependLatent]
+NODES = [
+    CardamonNodesMiniMaxH3ExtractLatent,
+    CardamonNodesMiniMaxH3AddLatentGuide,
+    CardamonNodesMiniMaxH3PrependLatent,
+]

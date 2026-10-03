@@ -4,7 +4,7 @@
 
 import { app } from "../../scripts/app.js";
 
-const NODE_CLASS = "CardamonLoadLatent";
+const NODE_CLASS = "CardamonNodesLoadLatent";
 
 function vaeConnected(node) {
   const input = node.inputs?.find((i) => i.name === "vae");

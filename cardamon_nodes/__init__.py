@@ -1,6 +1,5 @@
-from typing_extensions import override
-
 from comfy_api.latest import ComfyExtension, io
+from typing_extensions import override
 
 from . import images, latent_files, loras, minimax_h3, prompts, utilities, video
 
@@ -16,11 +15,11 @@ NODES: list[type[io.ComfyNode]] = [
 ]
 
 
-class CardamonExtension(ComfyExtension):
+class CardamonNodesExtension(ComfyExtension):
     @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return list(NODES)
 
 
-async def comfy_entrypoint() -> CardamonExtension:
-    return CardamonExtension()
+async def comfy_entrypoint() -> CardamonNodesExtension:
+    return CardamonNodesExtension()

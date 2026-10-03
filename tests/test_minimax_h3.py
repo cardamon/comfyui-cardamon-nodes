@@ -1,13 +1,13 @@
+import comfy.nested_tensor
 import pytest
 import torch
 
-import comfy.nested_tensor
 from cardamon_nodes.minimax_h3 import (
     AUDIO_FRAME_OFFSET_KEY,
     FRAME_RESCALE,
-    CardamonMiniMaxH3AddLatentGuide,
-    CardamonMiniMaxH3ExtractLatent,
-    CardamonMiniMaxH3PrependLatent,
+    CardamonNodesMiniMaxH3AddLatentGuide,
+    CardamonNodesMiniMaxH3ExtractLatent,
+    CardamonNodesMiniMaxH3PrependLatent,
     frames_for_tokens,
     is_empty_latent,
     tokens_for_frames,
@@ -19,18 +19,32 @@ def av_latent(frames, height=64, width=96):
     tokens = tokens_for_frames(frames)
     audio_t = round(frames / 24 * 40)
     # Encode each position in the values so slices can be checked.
-    video = torch.arange(tokens, dtype=torch.float32).view(1, 1, tokens, 1, 1).expand(1, 24, tokens, height // 16, width // 16).clone()
-    audio = torch.arange(audio_t, dtype=torch.float32).view(1, 1, 1, audio_t).expand(1, 32, 2, audio_t).clone()
+    video = (
+        torch.arange(tokens, dtype=torch.float32)
+        .view(1, 1, tokens, 1, 1)
+        .expand(1, 24, tokens, height // 16, width // 16)
+        .clone()
+    )
+    audio = (
+        torch.arange(audio_t, dtype=torch.float32)
+        .view(1, 1, 1, audio_t)
+        .expand(1, 32, 2, audio_t)
+        .clone()
+    )
     return {"samples": comfy.nested_tensor.NestedTensor((video, audio))}
 
 
 def extract(latent, start_frame, length=0):
-    return CardamonMiniMaxH3ExtractLatent.execute(latent, start_frame, length).args
+    return CardamonNodesMiniMaxH3ExtractLatent.execute(latent, start_frame, length).args
 
 
-def add_guide(target, guide, frame_idx=0, use_video=True, use_audio=True, positive=None):
+def add_guide(
+    target, guide, frame_idx=0, use_video=True, use_audio=True, positive=None
+):
     positive = positive if positive is not None else [[torch.zeros(1, 1, 8), {}]]
-    return CardamonMiniMaxH3AddLatentGuide.execute(positive, target, guide, frame_idx, use_video, use_audio).args[0]
+    return CardamonNodesMiniMaxH3AddLatentGuide.execute(
+        positive, target, guide, frame_idx, use_video, use_audio
+    ).args[0]
 
 
 @pytest.mark.parametrize("frames", [1, 5, 22, 39, 124, 362])
@@ -38,7 +52,9 @@ def test_token_frame_round_trip(frames):
     assert frames_for_tokens(tokens_for_frames(frames)) == frames
 
 
-@pytest.mark.parametrize("frames, expected", [(1, 1), (4, 1), (5, 5), (21, 5), (22, 22), (40, 39)])
+@pytest.mark.parametrize(
+    "frames, expected", [(1, 1), (4, 1), (5, 5), (21, 5), (22, 22), (40, 39)]
+)
 def test_valid_clip_frames(frames, expected):
     assert valid_clip_frames(frames) == expected
 
@@ -81,7 +97,9 @@ def test_extract_from_a_section_keeps_audio_aligned_with_the_source():
     nested, start, _ = extract(section, 17)
     # frame 17 of the section is frame 34 of the source, at audio position 56.67
     assert nested["samples"].tensors[1][0, 0, 0, 0] == 57
-    assert (17 + start + nested[AUDIO_FRAME_OFFSET_KEY]) * FRAME_RESCALE == pytest.approx(57)
+    assert (
+        17 + start + nested[AUDIO_FRAME_OFFSET_KEY]
+    ) * FRAME_RESCALE == pytest.approx(57)
 
 
 def test_extract_rejects_start_outside_video():
@@ -105,8 +123,12 @@ def test_add_guide_anchors_video_and_audio_at_matching_times():
 def test_add_guide_keeps_existing_keyframes():
     existing = {"resolved_frame_index": 0, "latent": torch.zeros(1, 24, 1, 4, 6)}
     section, _, _ = extract(av_latent(124), -22)
-    positive = add_guide(av_latent(124), section, frame_idx=-22,
-                         positive=[[torch.zeros(1, 1, 8), {"minimax_keyframes": [existing]}]])
+    positive = add_guide(
+        av_latent(124),
+        section,
+        frame_idx=-22,
+        positive=[[torch.zeros(1, 1, 8), {"minimax_keyframes": [existing]}]],
+    )
     keyframes = positive[0][1]["minimax_keyframes"]
     assert keyframes[0] is existing
     assert keyframes[1]["resolved_frame_index"] == 102
@@ -135,14 +157,30 @@ def test_guides_build_a_valid_model_layout():
     video, audio = target["samples"].tensors
     section, _, _ = extract(av_latent(124), 17)  # fractional audio offset
     keyframes = add_guide(target, section)[0][1]["minimax_keyframes"]
-    layout = PackedLayout(8, video.shape[2], video.shape[3], video.shape[4], audio.shape[-1], keyframes=keyframes)
+    layout = PackedLayout(
+        8,
+        video.shape[2],
+        video.shape[3],
+        video.shape[4],
+        audio.shape[-1],
+        keyframes=keyframes,
+    )
     cond_video = keyframes[0]["latent"]
     cond_rows = cond_video.shape[2] * cond_video.shape[3] * cond_video.shape[4] // 4
     audio_rows = keyframes[1]["audio_latent"].shape[-1] * 2
-    assert layout.seq_len == 8 + cond_rows + audio_rows + audio.shape[-1] * 2 + video.shape[2] * video.shape[3] * video.shape[4] // 4
+    assert (
+        layout.seq_len
+        == 8
+        + cond_rows
+        + audio_rows
+        + audio.shape[-1] * 2
+        + video.shape[2] * video.shape[3] * video.shape[4] // 4
+    )
 
 
-@pytest.mark.parametrize("empty", [{"samples": torch.zeros(0)}, None], ids=["empty", "none"])
+@pytest.mark.parametrize(
+    "empty", [{"samples": torch.zeros(0)}, None], ids=["empty", "none"]
+)
 def test_empty_guide_passes_through_extract_and_adds_no_guide(empty):
     section, start, length = extract(empty, -22)
     assert is_empty_latent(section) and (start, length) == (0, 0)
@@ -151,7 +189,7 @@ def test_empty_guide_passes_through_extract_and_adds_no_guide(empty):
 
 
 def prepend(latent, section):
-    return CardamonMiniMaxH3PrependLatent.execute(latent, section).args[0]
+    return CardamonNodesMiniMaxH3PrependLatent.execute(latent, section).args[0]
 
 
 def zero_av_latent(frames, height=64, width=96):
@@ -161,26 +199,37 @@ def zero_av_latent(frames, height=64, width=96):
 
 
 def test_prepend_writes_section_and_masks_it():
-    section, _, _ = extract(av_latent(124), -22)  # starts at frame 102, audio exactly aligned
+    section, _, _ = extract(
+        av_latent(124), -22
+    )  # starts at frame 102, audio exactly aligned
     out = prepend(zero_av_latent(226), section)
     video, audio = out["samples"].tensors
     video_mask, audio_mask = out["noise_mask"].tensors
-    assert video_mask.shape == (1, 1) + video.shape[2:] and audio_mask.shape == (1, 1) + audio.shape[2:]
+    assert (
+        video_mask.shape == (1, 1) + video.shape[2:]
+        and audio_mask.shape == (1, 1) + audio.shape[2:]
+    )
     assert video[0, 0, :, 0, 0].tolist()[:8] == [30, 31, 32, 33, 34, 35, 36, 0]
     assert video_mask[0, 0, :, 0, 0].tolist()[:8] == [0, 0, 0, 0, 0, 0, 0, 1]
     section_audio = section["samples"].tensors[1]
     assert torch.equal(audio[..., : section_audio.shape[-1]], section_audio)
-    assert audio_mask[0, 0, 0].tolist() == [0.0] * section_audio.shape[-1] + [1.0] * (audio.shape[-1] - section_audio.shape[-1])
+    assert audio_mask[0, 0, 0].tolist() == [0.0] * section_audio.shape[-1] + [1.0] * (
+        audio.shape[-1] - section_audio.shape[-1]
+    )
 
 
 def test_prepend_places_offset_audio_at_the_nearest_latent():
-    section, _, _ = extract(av_latent(124), 17, 22)  # frame 17: audio starts 0.4 frames later
+    section, _, _ = extract(
+        av_latent(124), 17, 22
+    )  # frame 17: audio starts 0.4 frames later
     audio_mask = prepend(zero_av_latent(226), section)["noise_mask"].tensors[1]
     kept = (audio_mask[0, 0, 0] == 0).nonzero().flatten().tolist()
     assert kept[0] == 1 and len(kept) == section["samples"].tensors[1].shape[-1]
 
 
-@pytest.mark.parametrize("empty", [{"samples": torch.zeros(0)}, None], ids=["empty", "none"])
+@pytest.mark.parametrize(
+    "empty", [{"samples": torch.zeros(0)}, None], ids=["empty", "none"]
+)
 def test_prepend_without_section_passes_latent_through(empty):
     latent = zero_av_latent(226)
     assert prepend(latent, empty) is latent
@@ -211,15 +260,26 @@ def test_prepend_mask_keeps_exactly_the_section_tokens_in_the_model():
     out = prepend(zero_av_latent(226), section)
     shapes = [t.shape for t in out["samples"].tensors]
     # what the sampler does with a nested noise mask
-    masks = [comfy.sampler_helpers.prepare_mask(m, shape, "cpu") for m, shape in zip(out["noise_mask"].tensors, shapes)]
+    masks = [
+        comfy.sampler_helpers.prepare_mask(m, shape, "cpu")
+        for m, shape in zip(out["noise_mask"].tensors, shapes)
+    ]
     packed, latent_shapes = comfy.utils.pack_latents(masks)
     # what the H3 model does with it
-    h3 = types.SimpleNamespace(diffusion_model=types.SimpleNamespace(patch_size=(1, 2, 2)))
-    h3._pool_masks_to_token_grid = types.MethodType(comfy.model_base.MiniMaxH3._pool_masks_to_token_grid, h3)
-    h3._token_grid_masks = types.MethodType(comfy.model_base.MiniMaxH3._token_grid_masks, h3)
+    h3 = types.SimpleNamespace(
+        diffusion_model=types.SimpleNamespace(patch_size=(1, 2, 2))
+    )
+    h3._pool_masks_to_token_grid = types.MethodType(
+        comfy.model_base.MiniMaxH3._pool_masks_to_token_grid, h3
+    )
+    h3._token_grid_masks = types.MethodType(
+        comfy.model_base.MiniMaxH3._token_grid_masks, h3
+    )
     values = comfy.model_base.MiniMaxH3._denoise_mask_values(h3, packed, latent_shapes)
     video = shapes[0]
-    rows = mask_row_values(values["denoise_mask"][0, 0], video[2], video[3], video[4]).view(video[2], -1)
+    rows = mask_row_values(
+        values["denoise_mask"][0, 0], video[2], video[3], video[4]
+    ).view(video[2], -1)
     assert rows[:7].max() == 0 and rows[7:].min() == 1
     audio_rows = values["audio_denoise_mask"][0, 0]  # [channel, audio latent]
     kept = section["samples"].tensors[1].shape[-1]

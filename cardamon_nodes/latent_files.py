@@ -107,13 +107,13 @@ def output_file_path(name):
     return path
 
 
-class CardamonSaveLatent(io.ComfyNode):
+class CardamonNodesSaveLatent(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonSaveLatent",
+            node_id="CardamonNodesSaveLatent",
             display_name="Save Latent (Output Dir)",
-            category="cardamon/latent",
+            category="Cardamon Nodes/latent",
             description="Save a latent, including nested latents such as MiniMax H3 AV, to the output directory. "
             "Load it again with Load Latent (Output Dir).",
             inputs=[
@@ -149,13 +149,13 @@ class CardamonSaveLatent(io.ComfyNode):
         )
 
 
-class CardamonLoadLatent(io.ComfyNode):
+class CardamonNodesLoadLatent(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonLoadLatent",
+            node_id="CardamonNodesLoadLatent",
             display_name="Load Latent (Output Dir)",
-            category="cardamon/latent",
+            category="Cardamon Nodes/latent",
             description="Load a .latent file from the output directory, newest first. Also reads files from the built-in Save Latent node. "
             "Refresh the node definitions (press R) to list newly saved files. "
             "With a VAE connected, selecting a latent shows its last frame.",
@@ -195,4 +195,4 @@ class CardamonLoadLatent(io.ComfyNode):
         return True
 
 
-NODES = [CardamonSaveLatent, CardamonLoadLatent]
+NODES = [CardamonNodesSaveLatent, CardamonNodesLoadLatent]

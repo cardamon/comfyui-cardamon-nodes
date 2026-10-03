@@ -12,6 +12,9 @@ import pytest
 
 _comfyui_path = os.environ.get("COMFYUI_PATH")
 if not _comfyui_path or not (Path(_comfyui_path).expanduser() / "comfy_api").is_dir():
-    pytest.exit("Set COMFYUI_PATH to the root of a ComfyUI checkout to run the tests.", returncode=4)
+    pytest.exit(
+        "Set COMFYUI_PATH to the root of a ComfyUI checkout to run the tests.",
+        returncode=4,
+    )
 
 sys.path.insert(0, str(Path(_comfyui_path).expanduser().resolve()))

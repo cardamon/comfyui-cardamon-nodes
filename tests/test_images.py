@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from cardamon_nodes.images import CardamonImageStitch, parse_color
+from cardamon_nodes.images import CardamonNodesImageStitch, parse_color
 
 WHITE = "#ffffff"
 
@@ -10,14 +10,24 @@ def solid(value, height=4, width=6, channels=3, batch=1):
     return torch.full((batch, height, width, channels), value / 10)
 
 
-def stitch(*images, direction="right", match=False, wrap_after=0, spacing=0, color=WHITE):
+def stitch(
+    *images, direction="right", match=False, wrap_after=0, spacing=0, color=WHITE
+):
     inputs = {f"image_{i}": image for i, image in enumerate(images)}
-    return CardamonImageStitch.execute(inputs, direction, match, wrap_after, spacing, color).args[0]
+    return CardamonNodesImageStitch.execute(
+        inputs, direction, match, wrap_after, spacing, color
+    ).args[0]
 
 
 def layout(out):
     # The grey level of each pixel as a digit, row by row (white spacing is 10).
-    return ["".join(str(round(v)) if round(v) < 10 else "." for v in (out[0, y, :, 0] * 10).tolist()) for y in range(out.shape[1])]
+    return [
+        "".join(
+            str(round(v)) if round(v) < 10 else "."
+            for v in (out[0, y, :, 0] * 10).tolist()
+        )
+        for y in range(out.shape[1])
+    ]
 
 
 def test_parse_color():
@@ -33,17 +43,23 @@ def test_right_wraps_into_rows_aligned_left():
 
 
 def test_left_runs_from_the_right_and_aligns_rows_right():
-    out = stitch(solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), direction="left", wrap_after=2)
+    out = stitch(
+        solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), direction="left", wrap_after=2
+    )
     assert layout(out) == ["21", ".3"]
 
 
 def test_down_wraps_into_columns_aligned_top():
-    out = stitch(solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), direction="down", wrap_after=2)
+    out = stitch(
+        solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), direction="down", wrap_after=2
+    )
     assert layout(out) == ["13", "2."]
 
 
 def test_up_runs_from_the_bottom_and_aligns_columns_bottom():
-    out = stitch(solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), direction="up", wrap_after=2)
+    out = stitch(
+        solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), direction="up", wrap_after=2
+    )
     assert layout(out) == ["2.", "13"]
 
 
@@ -53,7 +69,9 @@ def test_no_wrap_is_one_line():
 
 
 def test_spacing_between_images_and_lines():
-    out = stitch(solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), wrap_after=2, spacing=1)
+    out = stitch(
+        solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), wrap_after=2, spacing=1
+    )
     assert layout(out) == ["1.2", "...", "3.."]
 
 
@@ -69,11 +87,22 @@ def test_match_image_size_resizes_to_image_1():
 
 
 def test_transparent_spacing_gives_rgba():
-    out = stitch(solid(1, 1, 1), solid(2, 1, 1), solid(3, 1, 1), wrap_after=2, spacing=1, color="#ff000040")
+    out = stitch(
+        solid(1, 1, 1),
+        solid(2, 1, 1),
+        solid(3, 1, 1),
+        wrap_after=2,
+        spacing=1,
+        color="#ff000040",
+    )
     assert out.shape[-1] == 4
-    assert out[0, 0, 0].tolist() == pytest.approx([0.1, 0.1, 0.1, 1.0])  # image keeps full alpha
+    assert out[0, 0, 0].tolist() == pytest.approx(
+        [0.1, 0.1, 0.1, 1.0]
+    )  # image keeps full alpha
     assert out[0, 0, 1].tolist() == pytest.approx([1.0, 0.0, 0.0, 64 / 255])  # spacing
-    assert out[0, 2, 2].tolist() == pytest.approx([1.0, 0.0, 0.0, 64 / 255])  # empty end of last row
+    assert out[0, 2, 2].tolist() == pytest.approx(
+        [1.0, 0.0, 0.0, 64 / 255]
+    )  # empty end of last row
 
 
 def test_opaque_spacing_keeps_rgb_unless_an_image_has_alpha():
@@ -95,7 +124,7 @@ def test_batches_repeat_their_last_image():
 
 def test_inputs_are_ordered_by_number():
     images = {f"image_{i}": solid(i % 10, 1, 1) for i in (10, 2, 0, 1)}
-    out = CardamonImageStitch.execute(images, "right", False, 0, 0, WHITE).args[0]
+    out = CardamonNodesImageStitch.execute(images, "right", False, 0, 0, WHITE).args[0]
     assert layout(out) == ["0120"]
 
 

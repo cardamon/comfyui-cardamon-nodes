@@ -24,13 +24,13 @@ def parse_stack(loras):
     ]
 
 
-class CardamonLoraStack(io.ComfyNode):
+class CardamonNodesLoraStack(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonLoraStack",
+            node_id="CardamonNodesLoraStack",
             display_name="LoRA Stack",
-            category="cardamon/loaders",
+            category="Cardamon Nodes/loaders",
             description="Apply several LoRAs in order. Add them with the Add LoRA button, which browses the loras directory. "
             "Disabled LoRAs are not loaded at all.",
             inputs=[
@@ -65,4 +65,4 @@ class CardamonLoraStack(io.ComfyNode):
         return True
 
 
-NODES = [CardamonLoraStack]
+NODES = [CardamonNodesLoraStack]

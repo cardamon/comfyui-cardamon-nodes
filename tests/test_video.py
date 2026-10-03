@@ -2,24 +2,38 @@ from fractions import Fraction
 
 import pytest
 import torch
-
-from cardamon_nodes.video import CardamonJoinShotVideos
 from comfy_api.latest import InputImpl, Types
+
+from cardamon_nodes.video import CardamonNodesJoinShotVideos
 
 SAMPLE_RATE = 32000
 
 
 def shot(frames, first_value, audio_samples=None, fps=24, width=8):
     # Frame i holds first_value + i, and each audio sample holds its shot's first_value.
-    images = (first_value + torch.arange(frames, dtype=torch.float32)).view(-1, 1, 1, 1).expand(frames, 4, width, 3).clone()
+    images = (
+        (first_value + torch.arange(frames, dtype=torch.float32))
+        .view(-1, 1, 1, 1)
+        .expand(frames, 4, width, 3)
+        .clone()
+    )
     audio = None
     if audio_samples is not None:
-        audio = {"waveform": torch.full((1, 2, audio_samples), float(first_value)), "sample_rate": SAMPLE_RATE}
-    return InputImpl.VideoFromComponents(Types.VideoComponents(images=images, audio=audio, frame_rate=Fraction(fps)))
+        audio = {
+            "waveform": torch.full((1, 2, audio_samples), float(first_value)),
+            "sample_rate": SAMPLE_RATE,
+        }
+    return InputImpl.VideoFromComponents(
+        Types.VideoComponents(images=images, audio=audio, frame_rate=Fraction(fps))
+    )
 
 
 def join(videos, trim_frames=22):
-    return CardamonJoinShotVideos.execute(videos, [trim_frames]).args[0].get_components()
+    return (
+        CardamonNodesJoinShotVideos.execute(videos, [trim_frames])
+        .args[0]
+        .get_components()
+    )
 
 
 def frame_values(components):

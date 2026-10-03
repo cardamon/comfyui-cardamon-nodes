@@ -1,8 +1,7 @@
 """Join shot videos into one video."""
 
 import torch
-
-from comfy_api.latest import InputImpl, Types, io
+from comfy_api.latest import AudioInput, InputImpl, Types, io
 
 
 def join_shot_components(components, trim_frames):
@@ -15,14 +14,23 @@ def join_shot_components(components, trim_frames):
     size = components[0].images.shape[1:]
     for i, c in enumerate(components):
         if c.frame_rate != frame_rate:
-            raise ValueError(f"video {i + 1} is {c.frame_rate} fps, video 1 is {frame_rate} fps")
+            raise ValueError(
+                f"video {i + 1} is {c.frame_rate} fps, video 1 is {frame_rate} fps"
+            )
         if c.images.shape[1:] != size:
-            raise ValueError(f"video {i + 1} is {c.images.shape[2]}x{c.images.shape[1]}, video 1 is {size[1]}x{size[0]}")
+            raise ValueError(
+                f"video {i + 1} is {c.images.shape[2]}x{c.images.shape[1]}, video 1 is {size[1]}x{size[0]}"
+            )
     last = len(components) - 1
-    kept = [c.images.shape[0] - (trim_frames if i < last else 0) for i, c in enumerate(components)]
+    kept = [
+        c.images.shape[0] - (trim_frames if i < last else 0)
+        for i, c in enumerate(components)
+    ]
     for i, frames in enumerate(kept):
         if frames < 1:
-            raise ValueError(f"video {i + 1} has {components[i].images.shape[0]} frames, too few to cut {trim_frames}")
+            raise ValueError(
+                f"video {i + 1} has {components[i].images.shape[0]} frames, too few to cut {trim_frames}"
+            )
 
     images = torch.cat([c.images[:frames] for c, frames in zip(components, kept)])
     alpha = None
@@ -51,23 +59,30 @@ def join_audio(components, kept, frame_rate):
         end = round((start_frame + frames) / frame_rate * sample_rate)
         waveform = audio["waveform"][..., : end - start]
         if waveform.shape[-1] < end - start:
-            waveform = torch.nn.functional.pad(waveform, (0, end - start - waveform.shape[-1]))
+            waveform = torch.nn.functional.pad(
+                waveform, (0, end - start - waveform.shape[-1])
+            )
         parts.append(waveform)
         start_frame += frames
-    return {"waveform": torch.cat(parts, dim=-1), "sample_rate": sample_rate}
+    return AudioInput(
+        {"waveform": torch.cat(parts, dim=-1), "sample_rate": sample_rate}
+    )
 
 
-class CardamonJoinShotVideos(io.ComfyNode):
+class CardamonNodesJoinShotVideos(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonJoinShotVideos",
+            node_id="CardamonNodesJoinShotVideos",
             display_name="Join Shot Videos",
-            category="cardamon/video",
+            category="Cardamon Nodes/video",
             description="Join a list of shot videos into one video, cutting frames off the end of every shot but the last, "
             "e.g. the frames the next shot continues from. Audio is cut at the same points.",
             inputs=[
-                io.Video.Input("videos", tooltip="Shot videos in order, e.g. a list from Create Video after an accumulating End Loop."),
+                io.Video.Input(
+                    "videos",
+                    tooltip="Shot videos in order, e.g. a list from Create Video after an accumulating End Loop.",
+                ),
                 io.Int.Input(
                     "trim_frames",
                     default=22,
@@ -87,11 +102,16 @@ class CardamonJoinShotVideos(io.ComfyNode):
         first = videos[0]
         color_space = first.get_color_space()
         video = InputImpl.VideoFromComponents(
-            Types.VideoComponents(images=images, audio=audio, frame_rate=components[0].frame_rate, alpha=alpha),
+            Types.VideoComponents(
+                images=images,
+                audio=audio,
+                frame_rate=components[0].frame_rate,
+                alpha=alpha,
+            ),
             bit_depth=first.get_bit_depth(),
             color_space="sRGB" if color_space == "auto" else color_space,
         )
         return io.NodeOutput(video)
 
 
-NODES = [CardamonJoinShotVideos]
+NODES = [CardamonNodesJoinShotVideos]

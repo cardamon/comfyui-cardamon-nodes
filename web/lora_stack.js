@@ -6,7 +6,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const NODE_CLASS = "CardamonLoraStack";
+const NODE_CLASS = "CardamonNodesLoraStack";
 const ROW_HEIGHT = 24;
 const ROW_GAP = 2;
 // Space above and below the rows; the widget's height includes it.

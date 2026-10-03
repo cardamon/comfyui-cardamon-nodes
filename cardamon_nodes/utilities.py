@@ -36,13 +36,13 @@ def parse_time(text):
     return sign * (total * 60 + seconds) if whole else sign * seconds
 
 
-class CardamonTime(io.ComfyNode):
+class CardamonNodesTime(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonTime",
+            node_id="CardamonNodesTime",
             display_name="Time",
-            category="cardamon/utils",
+            category="Cardamon Nodes/utils",
             description="A length or offset in time, entered as hh:mm:ss.fff, mm:ss.fff or seconds, output as seconds. "
             "The node shows the seconds as you type.",
             inputs=[
@@ -71,4 +71,4 @@ class CardamonTime(io.ComfyNode):
         return True
 
 
-NODES = [CardamonTime]
+NODES = [CardamonNodesTime]

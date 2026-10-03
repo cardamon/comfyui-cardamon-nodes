@@ -96,36 +96,6 @@ starts at a multiple of 51 frames.
   it runs just this node and the nodes its VAE comes from. For MiniMax H3 latents only the last
   two chunks are decoded, so this is quick even for long videos.
 
-## Generating shots in a loop
-
-ComfyUI's built-in *Start Loop* and *End Loop* nodes run the shots one after another in a single
-run, each continuing from the previous one. The example workflow
-[`example_workflows/minimax-h3-seamless-multishot.json`](example_workflows/minimax-h3-seamless-multishot.json)
-is set up like this:
-
-1. **Prompts:** *Shot Prompts* builds one prompt per shot from a template, and its list goes to
-   *Start Loop* in `List` mode. Everything between *Start Loop* and *End Loop* runs once per shot.
-2. **Guide from the previous shot:** *MiniMax H3 Image to Video* gets `list_item` as its prompt.
-   *Add Latent Guide for MiniMax H3* anchors `current_iteration_value` at `frame_idx` 0. On the
-   first shot there is nothing to continue from yet, so no guide is added.
-3. **Sample and pass on:** after sampling, *Extract MiniMax H3 Latent Section* (`start_frame` -22)
-   takes the shot's last frames. They go to End Loop's `next_iteration_value` and become the next
-   shot's guide.
-4. **Save as you go (optional):** *Save Latent (Output Dir)* saves each extracted section as soon
-   as its shot is done. It's connected to one of End Loop's `termination` inputs, which makes it
-   run on every iteration. The loop doesn't need it, because End Loop passes the section on
-   directly.
-5. **Decode after the loop:** the sampled latent goes to End Loop's `output_value` with
-   `accumulate` on, so End Loop outputs every shot as a list. *VAE Decode*, *VAE Decode Audio*,
-   *Create Video* and *Save Video* come after End Loop and run once per shot.
-
-Output nodes such as *Save Video* can't be inside the loop, because nothing can connect them to
-End Loop. If they are, ComfyUI refuses the run with "Loop body is not closed".
-
-The example workflow saves every shot as its own video, and each shot after the first starts
-with the 22 frames it continues from. To get one seamless video instead, connect *Create Video*
-to *Join Shot Videos* with `trim_frames` 22, and that to *Save Video*.
-
 ## Tips
 
 - **Trim after the VAE decode, not before.** The H3 video decoder decodes each 17-frame chunk
@@ -140,10 +110,27 @@ to *Join Shot Videos* with `trim_frames` 22, and that to *Save Video*.
 
 Nodes use the ComfyUI V3 node API (`comfy_api.latest`). Each node lives in its own
 module under `cardamon_nodes/` and is registered by adding its class to `NODES` in
-`cardamon_nodes/__init__.py`. Node IDs start with `Cardamon`, and categories start with `cardamon/`.
+`cardamon_nodes/__init__.py`. Node IDs start with `CardamonNodes`, and categories start with `Cardamon Nodes/`.
 
 Tests import ComfyUI's modules from a local ComfyUI checkout:
 
 ```sh
 COMFYUI_PATH=/path/to/ComfyUI pytest
+```
+
+Use a conda environment, for example with Python 3.12 and GCC 12, to ensure compatibility with frequently used ComfyUI dependencies.
+
+Recommended VSCode `.vscode/settings.json`:
+```json
+{
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python.defaultInterpreterPath": "/home/<user>/.conda/envs/<conda environment name>/bin/python",
+    "python.analysis.extraPaths": [
+        "/path/to/ComfyUI"
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportIncompatibleMethodOverride": "none"
+    }
+}
 ```

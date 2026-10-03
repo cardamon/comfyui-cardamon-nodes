@@ -1,10 +1,15 @@
-import pytest
-import torch
-
 import comfy.nested_tensor
 import comfy.utils
 import folder_paths
-from cardamon_nodes.latent_files import CardamonLoadLatent, CardamonSaveLatent, load_latent, save_latent
+import pytest
+import torch
+
+from cardamon_nodes.latent_files import (
+    CardamonNodesLoadLatent,
+    CardamonNodesSaveLatent,
+    load_latent,
+    save_latent,
+)
 
 
 @pytest.fixture
@@ -15,8 +20,11 @@ def output_dir(tmp_path, monkeypatch):
 
 def test_nested_latent_round_trip_keeps_simple_extras(tmp_path):
     video, audio = torch.randn(1, 24, 7, 4, 6), torch.randn(1, 32, 2, 37)
-    latent = {"samples": comfy.nested_tensor.NestedTensor((video, audio)), "offset": 0.4,
-              "noise_mask": torch.ones(1)}
+    latent = {
+        "samples": comfy.nested_tensor.NestedTensor((video, audio)),
+        "offset": 0.4,
+        "noise_mask": torch.ones(1),
+    }
     save_latent(latent, tmp_path / "a.latent")
     loaded = load_latent(tmp_path / "a.latent")
     assert torch.equal(loaded["samples"].tensors[0], video)
@@ -33,28 +41,34 @@ def test_plain_latent_round_trip(tmp_path):
 
 def test_loads_builtin_save_latent_format(tmp_path):
     samples = torch.randn(1, 4, 8, 8)
-    comfy.utils.save_torch_file({"latent_tensor": samples, "latent_format_version_0": torch.tensor([])},
-                                str(tmp_path / "a.latent"))
+    comfy.utils.save_torch_file(
+        {"latent_tensor": samples, "latent_format_version_0": torch.tensor([])},
+        str(tmp_path / "a.latent"),
+    )
     assert torch.equal(load_latent(tmp_path / "a.latent")["samples"], samples)
 
 
 def test_save_node_writes_to_output_and_load_node_lists_it(output_dir):
-    latent = {"samples": comfy.nested_tensor.NestedTensor((torch.randn(1, 24, 2, 4, 6), torch.randn(1, 32, 2, 8)))}
-    result = CardamonSaveLatent.execute(latent, "latents/test")
+    latent = {
+        "samples": comfy.nested_tensor.NestedTensor(
+            (torch.randn(1, 24, 2, 4, 6), torch.randn(1, 32, 2, 8))
+        )
+    }
+    result = CardamonNodesSaveLatent.execute(latent, "latents/test")
     saved = result.ui["latents"][0]
     assert (saved["subfolder"], saved["filename"]) == ("latents", "test_00001_.latent")
 
-    options = CardamonLoadLatent.define_schema().inputs[0].options
+    options = CardamonNodesLoadLatent.define_schema().inputs[0].options
     assert options == ["latents/test_00001_.latent"]
-    assert CardamonLoadLatent.validate_inputs(options[0]) is True
-    loaded = CardamonLoadLatent.execute(options[0]).args[0]
+    assert CardamonNodesLoadLatent.validate_inputs(options[0]) is True
+    loaded = CardamonNodesLoadLatent.execute(options[0]).args[0]
     assert torch.equal(loaded["samples"].tensors[0], latent["samples"].tensors[0])
 
 
 def test_load_node_refuses_paths_outside_output(output_dir):
-    assert CardamonLoadLatent.validate_inputs("../secret.latent") != True
+    assert CardamonNodesLoadLatent.validate_inputs("../secret.latent") != True
     with pytest.raises(ValueError):
-        CardamonLoadLatent.execute("../secret.latent")
+        CardamonNodesLoadLatent.execute("../secret.latent")
 
 
 class RecordingVae:
@@ -73,8 +87,15 @@ class RecordingVae:
 
 
 def h3_latent(tokens):
-    video = torch.arange(tokens, dtype=torch.float32).view(1, 1, tokens, 1, 1).expand(2, 24, tokens, 4, 6).clone()
-    return {"samples": comfy.nested_tensor.NestedTensor((video, torch.zeros(2, 32, 2, 10)))}
+    video = (
+        torch.arange(tokens, dtype=torch.float32)
+        .view(1, 1, tokens, 1, 1)
+        .expand(2, 24, tokens, 4, 6)
+        .clone()
+    )
+    return {
+        "samples": comfy.nested_tensor.NestedTensor((video, torch.zeros(2, 32, 2, 10)))
+    }
 
 
 def test_h3_preview_decodes_only_the_last_two_chunks_of_the_last_item():
@@ -98,9 +119,16 @@ def test_short_h3_latent_is_decoded_whole():
 def test_other_latents_decode_the_last_batch_item_whole():
     from cardamon_nodes.latent_files import decode_last_frame, last_frame_samples
 
-    video = torch.arange(10, dtype=torch.float32).view(1, 1, 10, 1, 1).expand(3, 16, 10, 4, 4).clone()
+    video = (
+        torch.arange(10, dtype=torch.float32)
+        .view(1, 1, 10, 1, 1)
+        .expand(3, 16, 10, 4, 4)
+        .clone()
+    )
     assert last_frame_samples({"samples": video}).shape == (1, 16, 10, 4, 4)
-    images = torch.arange(3, dtype=torch.float32).view(3, 1, 1, 1).expand(3, 4, 8, 8).clone()
+    images = (
+        torch.arange(3, dtype=torch.float32).view(3, 1, 1, 1).expand(3, 4, 8, 8).clone()
+    )
     vae = RecordingVae()
     frame = decode_last_frame(vae, {"samples": images})
     assert vae.decoded[0].shape == (1, 4, 8, 8) and frame[0, 0, 0, 0] == 2
@@ -108,9 +136,9 @@ def test_other_latents_decode_the_last_batch_item_whole():
 
 def test_load_node_previews_only_with_a_vae(output_dir):
     save_latent(h3_latent(37), output_dir / "shot.latent")
-    without = CardamonLoadLatent.execute("shot.latent")
+    without = CardamonNodesLoadLatent.execute("shot.latent")
     assert without.ui is None
-    with_vae = CardamonLoadLatent.execute("shot.latent", vae=RecordingVae())
+    with_vae = CardamonNodesLoadLatent.execute("shot.latent", vae=RecordingVae())
     assert with_vae.args[0]["samples"].tensors[0].shape == (2, 24, 37, 4, 6)
     images = with_vae.ui.as_dict()["images"]
     assert len(images) == 1 and images[0]["type"] == "temp"

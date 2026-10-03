@@ -3,7 +3,7 @@
 
 import { app } from "../../scripts/app.js";
 
-const NODE_CLASS = "CardamonTime";
+const NODE_CLASS = "CardamonNodesTime";
 const SECONDS_FIELD = /^\d+(?:[.,]\d*)?$/;
 const WHOLE_FIELD = /^\d+$/;
 

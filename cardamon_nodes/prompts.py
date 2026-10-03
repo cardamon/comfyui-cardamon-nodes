@@ -19,26 +19,41 @@ def build_shot_prompts(template, shots):
         template = "{{ SHOT }}"
     elif not SHOT_PLACEHOLDER.search(template):
         raise ValueError("the template has no {{ SHOT }} placeholder")
-    prompts = [SHOT_PLACEHOLDER.sub(lambda _: shot.strip(), template) for shot in shots if shot and shot.strip()]
+    prompts = [
+        SHOT_PLACEHOLDER.sub(lambda _: shot.strip(), template)
+        for shot in shots
+        if shot and shot.strip()
+    ]
     if not prompts:
         raise ValueError("all shot prompts are empty")
     return prompts
 
 
-class CardamonShotPrompts(io.ComfyNode):
+class CardamonNodesShotPrompts(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="CardamonShotPrompts",
+            node_id="CardamonNodesShotPrompts",
             display_name="Shot Prompts",
-            category="cardamon/prompt",
+            category="Cardamon Nodes/prompt",
             description="Build one prompt per shot from a template. Outputs a list, so connected nodes run once per prompt. "
-                        "A new shot input appears as soon as the last one is connected. Empty shot prompts are skipped.",
+            "A new shot input appears as soon as the last one is connected. Empty shot prompts are skipped.",
             inputs=[
-                io.String.Input("template", multiline=True, default="",
-                                tooltip="Prompt with a {{ SHOT }} placeholder, replaced by each shot prompt. Leave empty to use the shot prompts as they are."),
-                io.Autogrow.Input("shots", template=io.Autogrow.TemplatePrefix(
-                    input=io.String.Input("shot", multiline=True), prefix="shot_", min=1, max=MAX_SHOTS)),
+                io.String.Input(
+                    "template",
+                    multiline=True,
+                    default="",
+                    tooltip="Prompt with a {{ SHOT }} placeholder, replaced by each shot prompt. Leave empty to use the shot prompts as they are.",
+                ),
+                io.Autogrow.Input(
+                    "shots",
+                    template=io.Autogrow.TemplatePrefix(
+                        input=io.String.Input("shot", multiline=True),
+                        prefix="shot_",
+                        min=1,
+                        max=MAX_SHOTS,
+                    ),
+                ),
             ],
             outputs=[io.String.Output(display_name="prompts", is_output_list=True)],
         )
@@ -49,4 +64,4 @@ class CardamonShotPrompts(io.ComfyNode):
         return io.NodeOutput(build_shot_prompts(template, ordered))
 
 
-NODES = [CardamonShotPrompts]
+NODES = [CardamonNodesShotPrompts]
