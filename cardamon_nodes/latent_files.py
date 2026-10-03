@@ -64,6 +64,32 @@ def load_latent(path):
     return {"samples": samples, **info["extras"]}
 
 
+# MiniMax H3 video latents have 24 channels and are decoded in independent 17-frame chunks of 5
+# tokens, so their last frames decode from the last two chunks (7 tokens, 22 frames) alone.
+H3_VIDEO_CHANNELS = 24
+H3_TAIL_TOKENS = 7
+
+
+def last_frame_samples(latent):
+    """The part of a latent needed to decode its last frame: the last batch item, and for MiniMax H3
+    video only its last two chunks. Nested latents (e.g. H3 audio and video) use their video."""
+    samples = latent["samples"]
+    nested = getattr(samples, "is_nested", False)
+    video = samples.tensors[0] if nested else samples
+    video = video[-1:]
+    tokens = video.shape[2] if video.ndim == 5 else 0
+    if nested and video.ndim == 5 and video.shape[1] == H3_VIDEO_CHANNELS and tokens > H3_TAIL_TOKENS and (tokens - 2) % 5 == 0:
+        video = video[:, :, tokens - H3_TAIL_TOKENS :]
+    return video
+
+
+def decode_last_frame(vae, latent):
+    images = vae.decode(last_frame_samples(latent))
+    if images.ndim == 5:  # [batch, frames, ...] -> [batch * frames, ...], as VAE Decode does
+        images = images.reshape(-1, *images.shape[-3:])
+    return images[-1:]
+
+
 def output_latent_files():
     files, _ = folder_paths.recursive_search(folder_paths.get_output_directory())
     return sorted(
@@ -131,21 +157,35 @@ class CardamonLoadLatent(io.ComfyNode):
             display_name="Load Latent (Output Dir)",
             category="cardamon/latent",
             description="Load a .latent file from the output directory, newest first. Also reads files from the built-in Save Latent node. "
-            "Refresh the node definitions (press R) to list newly saved files.",
-            inputs=[io.Combo.Input("latent", options=output_latent_files())],
+            "Refresh the node definitions (press R) to list newly saved files. "
+            "With a VAE connected, selecting a latent shows its last frame.",
+            inputs=[
+                io.Combo.Input("latent", options=output_latent_files()),
+                io.Vae.Input(
+                    "vae",
+                    optional=True,
+                    tooltip="Video or image VAE to preview the latent's last frame with. "
+                    "Selecting a latent runs just this node and its VAE nodes to show it.",
+                ),
+            ],
             outputs=[io.Latent.Output(display_name="latent")],
+            # An output node, so the preview can run this node on its own (a partial run).
+            is_output_node=True,
         )
 
     @classmethod
-    def execute(cls, latent) -> io.NodeOutput:
-        return io.NodeOutput(load_latent(output_file_path(latent)))
+    def execute(cls, latent, vae=None) -> io.NodeOutput:
+        loaded = load_latent(output_file_path(latent))
+        if vae is None:
+            return io.NodeOutput(loaded)
+        return io.NodeOutput(loaded, ui=ui.PreviewImage(decode_last_frame(vae, loaded), cls=cls))
 
     @classmethod
-    def fingerprint_inputs(cls, latent):
+    def fingerprint_inputs(cls, latent, **kwargs):
         return os.path.getmtime(output_file_path(latent))
 
     @classmethod
-    def validate_inputs(cls, latent):
+    def validate_inputs(cls, latent, **kwargs):
         try:
             path = output_file_path(latent)
         except ValueError as e:

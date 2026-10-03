@@ -91,7 +91,10 @@ starts at a multiple of 51 frames.
   *Save Latent*, it handles nested latents such as MiniMax H3 AV latents.
 - **Load Latent (Output Dir)**: loads a `.latent` file straight from the output directory, so it
   doesn't have to be moved to the input directory first. It also reads files saved by the built-in
-  *Save Latent*. Refresh the node definitions (press R) to list newly saved files.
+  *Save Latent*. Refresh the node definitions (press R) to list newly saved files. With a VAE
+  connected, selecting a latent (or connecting the VAE) shows the latent's last frame on the node:
+  it runs just this node and the nodes its VAE comes from. For MiniMax H3 latents only the last
+  two chunks are decoded, so this is quick even for long videos.
 
 ## Generating shots in a loop
 

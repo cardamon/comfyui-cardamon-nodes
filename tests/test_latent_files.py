@@ -55,3 +55,62 @@ def test_load_node_refuses_paths_outside_output(output_dir):
     assert CardamonLoadLatent.validate_inputs("../secret.latent") != True
     with pytest.raises(ValueError):
         CardamonLoadLatent.execute("../secret.latent")
+
+
+class RecordingVae:
+    """Decodes to frames whose value is the latent frame index; records what it was given."""
+
+    def __init__(self, frames_per_token=1):
+        self.frames_per_token = frames_per_token
+        self.decoded = []
+
+    def decode(self, samples):
+        self.decoded.append(samples)
+        if samples.ndim == 4:  # image latents: [batch, c, h, w] -> [batch, H, W, 3]
+            return samples[:, :1].movedim(1, -1).repeat(1, 8, 8, 3)
+        frames = samples[0, 0, :, 0, 0].repeat_interleave(self.frames_per_token)
+        return frames.view(1, -1, 1, 1, 1).expand(1, -1, 8, 8, 3).clone()
+
+
+def h3_latent(tokens):
+    video = torch.arange(tokens, dtype=torch.float32).view(1, 1, tokens, 1, 1).expand(2, 24, tokens, 4, 6).clone()
+    return {"samples": comfy.nested_tensor.NestedTensor((video, torch.zeros(2, 32, 2, 10)))}
+
+
+def test_h3_preview_decodes_only_the_last_two_chunks_of_the_last_item():
+    from cardamon_nodes.latent_files import decode_last_frame
+
+    vae = RecordingVae()
+    frame = decode_last_frame(vae, h3_latent(37))  # 124 frames
+    (given,) = vae.decoded
+    assert given.shape == (1, 24, 7, 4, 6)
+    assert given[0, 0, :, 0, 0].tolist() == list(range(30, 37))
+    assert frame.shape == (1, 8, 8, 3) and frame[0, 0, 0, 0] == 36
+
+
+def test_short_h3_latent_is_decoded_whole():
+    from cardamon_nodes.latent_files import last_frame_samples
+
+    assert last_frame_samples(h3_latent(7)).shape[2] == 7
+    assert last_frame_samples(h3_latent(2)).shape[2] == 2
+
+
+def test_other_latents_decode_the_last_batch_item_whole():
+    from cardamon_nodes.latent_files import decode_last_frame, last_frame_samples
+
+    video = torch.arange(10, dtype=torch.float32).view(1, 1, 10, 1, 1).expand(3, 16, 10, 4, 4).clone()
+    assert last_frame_samples({"samples": video}).shape == (1, 16, 10, 4, 4)
+    images = torch.arange(3, dtype=torch.float32).view(3, 1, 1, 1).expand(3, 4, 8, 8).clone()
+    vae = RecordingVae()
+    frame = decode_last_frame(vae, {"samples": images})
+    assert vae.decoded[0].shape == (1, 4, 8, 8) and frame[0, 0, 0, 0] == 2
+
+
+def test_load_node_previews_only_with_a_vae(output_dir):
+    save_latent(h3_latent(37), output_dir / "shot.latent")
+    without = CardamonLoadLatent.execute("shot.latent")
+    assert without.ui is None
+    with_vae = CardamonLoadLatent.execute("shot.latent", vae=RecordingVae())
+    assert with_vae.args[0]["samples"].tensors[0].shape == (2, 24, 37, 4, 6)
+    images = with_vae.ui.as_dict()["images"]
+    assert len(images) == 1 and images[0]["type"] == "temp"
