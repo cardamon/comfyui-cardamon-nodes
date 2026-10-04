@@ -53,7 +53,9 @@ starts at a multiple of 51 frames.
 - **Join Shot Videos**: joins a list of shot videos, such as *Create Video*'s output after an
   accumulating *End Loop*, into one video. It cuts `trim_frames` frames off the end of every shot
   but the last: the frames the next shot continues from. Each shot's audio is cut at the same
-  point on the joined timeline, so it stays in sync however many shots there are.
+  point on the joined timeline, so it stays in sync however many shots there are. The shots are
+  compressed one at a time while joining, so the joined video takes little extra memory. Set
+  `codec` to the codec *Save Video* uses, so it can copy the video instead of encoding it again.
 
 ### LoRAs
 

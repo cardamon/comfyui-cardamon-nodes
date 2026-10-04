@@ -1,15 +1,11 @@
 """Join shot videos into one video."""
 
 import torch
-from comfy_api.latest import AudioInput, InputImpl, Types, io
+from comfy_api.latest import AudioInput, Input, InputImpl, Types, io
 
 
-def join_shot_components(components, trim_frames):
-    """Join video components, cutting `trim_frames` off the end of all but the last.
-
-    Each shot's audio is cut where its kept frames end on the joined timeline, so audio that runs
-    slightly longer or shorter than its video can't drift out of sync over many shots.
-    """
+def kept_frames(components, trim_frames):
+    """Frames kept from each video: all but `trim_frames` off the end of every video but the last."""
     frame_rate = components[0].frame_rate
     size = components[0].images.shape[1:]
     for i, c in enumerate(components):
@@ -31,15 +27,15 @@ def join_shot_components(components, trim_frames):
             raise ValueError(
                 f"video {i + 1} has {components[i].images.shape[0]} frames, too few to cut {trim_frames}"
             )
-
-    images = torch.cat([c.images[:frames] for c, frames in zip(components, kept)])
-    alpha = None
-    if all(c.alpha is not None for c in components):
-        alpha = torch.cat([c.alpha[:frames] for c, frames in zip(components, kept)])
-    return images, alpha, join_audio(components, kept, frame_rate)
+    return kept
 
 
 def join_audio(components, kept, frame_rate):
+    """The videos' audio joined into one track, each cut where its kept frames end.
+
+    Cut points are sample positions on the joined timeline, rounded once, so audio that runs
+    slightly longer or shorter than its video can't drift out of sync over many shots.
+    """
     audios = [c.audio for c in components]
     if all(a is None for a in audios):
         return None
@@ -54,7 +50,6 @@ def join_audio(components, kept, frame_rate):
     parts = []
     start_frame = 0
     for audio, frames in zip(audios, kept):
-        # Sample positions on the joined timeline, rounded once, so rounding can't accumulate.
         start = round(start_frame / frame_rate * sample_rate)
         end = round((start_frame + frames) / frame_rate * sample_rate)
         waveform = audio["waveform"][..., : end - start]
@@ -66,6 +61,33 @@ def join_audio(components, kept, frame_rate):
         start_frame += frames
     return AudioInput(
         {"waveform": torch.cat(parts, dim=-1), "sample_rate": sample_rate}
+    )
+
+
+def join_shot_videos(videos, trim_frames, codec):
+    """Join the videos into one, without holding all kept frames in memory a second time.
+
+    Each shot's kept frames are a view of its frames, encoded on its own into a compressed part
+    (VideoFromList does this one part at a time). The joined audio is added once for the whole
+    video, rather than per part, so per-part audio encoding can't shift it.
+    """
+    components = [v.get_components() for v in videos]
+    kept = kept_frames(components, trim_frames)
+    frame_rate = components[0].frame_rate
+    first = videos[0]
+    color_space = first.get_color_space()
+    parts: list[Input.Video] = [
+        InputImpl.VideoFromComponents(
+            Types.VideoComponents(images=c.images[:frames], frame_rate=frame_rate),
+            bit_depth=first.get_bit_depth(),
+            color_space="sRGB" if color_space == "auto" else color_space,
+        )
+        for c, frames in zip(components, kept)
+    ]
+    return InputImpl.VideoFromList(
+        parts,
+        complete_audio=join_audio(components, kept, frame_rate),
+        codec=Types.VideoCodec(codec),
     )
 
 
@@ -90,28 +112,23 @@ class CardamonNodesJoinShotVideos(io.ComfyNode):
                     max=9999,
                     tooltip="Frames to cut off the end of every video except the last.",
                 ),
+                io.Combo.Input(
+                    "codec",
+                    options=Types.VideoCodec.as_input(),
+                    default="auto",
+                    tooltip="Codec the shots are compressed with while joining (auto: H.264). Use the codec Save Video "
+                    "uses, so it can copy the result instead of encoding it a second time.",
+                ),
             ],
             outputs=[io.Video.Output()],
             is_input_list=True,
         )
 
     @classmethod
-    def execute(cls, videos, trim_frames) -> io.NodeOutput:
-        components = [v.get_components() for v in videos]
-        images, alpha, audio = join_shot_components(components, trim_frames[0])
-        first = videos[0]
-        color_space = first.get_color_space()
-        video = InputImpl.VideoFromComponents(
-            Types.VideoComponents(
-                images=images,
-                audio=audio,
-                frame_rate=components[0].frame_rate,
-                alpha=alpha,
-            ),
-            bit_depth=first.get_bit_depth(),
-            color_space="sRGB" if color_space == "auto" else color_space,
+    def execute(cls, videos, trim_frames, codec=None) -> io.NodeOutput:
+        return io.NodeOutput(
+            join_shot_videos(videos, trim_frames[0], codec[0] if codec else "auto")
         )
-        return io.NodeOutput(video)
 
 
 NODES = [CardamonNodesJoinShotVideos]
