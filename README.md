@@ -75,15 +75,21 @@ starts at a multiple of 51 frames.
   `wrap_after` images. With `right`, images run from left to right and rows are aligned left;
   with `left`, image 1 is at the right and rows are aligned right. `down` and `up` do the same
   with columns, aligned at the top or bottom. Rows stack top to bottom and columns left to right.
-  `match_image_size` resizes every image to the size of image 1. The spacing color also fills any
-  empty area. If it is transparent, or an image has alpha, the output has an alpha channel.
-  Set the transparency with the color picker's alpha slider in *Nodes 2.0* mode; the classic
-  canvas mode's picker doesn't have one.
+  `match_image_size` resizes every image to the size of image 1. An image list on an input (such
+  as the `images` output of *Load Images (Paths)*) is stitched as if its images were connected
+  one by one at that input. A batch stays a batch: its frames give one stitched image each, and
+  shorter batches repeat their last frame. The spacing color also fills any empty area. If it
+  is transparent, or an image has alpha, the output has an alpha channel. Set the transparency
+  with the color picker's alpha slider in *Nodes 2.0* mode; the classic canvas mode's picker
+  doesn't have one.
 - **Load Images (Paths)**: loads images from any paths on the machine running ComfyUI, also
   outside the ComfyUI directory, with one image output per path (up to 50). Typing in the last
-  path field adds an output, named after the file, and a new empty field below it. Paths may be
+  path field adds an output, named after the file, and a new empty field below it. The `images`
+  output above them has all images as a list, in path order, and is an empty list without paths.
+  A list rather than a batch, because the images may differ in size; animated images stay a batch
+  within it. Nodes that don't take lists run once per image, and fail on an empty list. Paths may be
   pasted with quotes around them, as `file://` URLs or starting with `~`. *Clear all* removes all
-  paths, outputs and their links, after confirmation. A run fails with a clear message if a path
+  paths, their outputs and links, after confirmation. A run fails with a clear message if a path
   is empty or a file doesn't exist. Note: anyone who can reach your ComfyUI server can use this
   node to read images anywhere the server can, so be careful when running ComfyUI with `--listen`.
 

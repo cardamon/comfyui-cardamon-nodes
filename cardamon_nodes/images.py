@@ -135,7 +135,10 @@ class CardamonNodesImageStitch(io.ComfyNode):
             ],
             category="Cardamon Nodes/image",
             description="Stitch one or more images in a direction, optionally wrapping onto new rows or columns. "
-            "A new image input appears as soon as the last one is connected.",
+            "A new image input appears as soon as the last one is connected. An image list on one input is "
+            "stitched as if its images were connected one by one.",
+            # Takes whole image lists (e.g. from Load Images (Paths)) instead of running once per item.
+            is_input_list=True,
             inputs=[
                 io.Autogrow.Input(
                     "images",
@@ -187,21 +190,23 @@ class CardamonNodesImageStitch(io.ComfyNode):
         spacing_width,
         spacing_color,
     ) -> io.NodeOutput:
+        # Every input arrives as a list: one item for a plain image, any number for an image list.
         ordered = [
-            images[name]
+            image
             for name in sorted(images, key=image_index)
-            if images[name] is not None
+            for image in images[name] or []
+            if image is not None
         ]
         if not ordered:
             raise ValueError("connect at least one image")
         return io.NodeOutput(
             stitch_images(
                 ordered,
-                direction,
-                match_image_size,
-                spacing_width,
-                parse_color(spacing_color),
-                wrap_after,
+                direction[0],
+                match_image_size[0],
+                spacing_width[0],
+                parse_color(spacing_color[0]),
+                wrap_after[0],
             )
         )
 
@@ -265,15 +270,26 @@ class CardamonNodesLoadImagePaths(io.ComfyNode):
             display_name="Load Images (Paths)",
             search_aliases=["load image from path", "image path", "load images"],
             category="Cardamon Nodes/image",
-            description="Load images from any paths on this machine, one output per path. Typing in the last path "
-            "field adds another field and output. Quotes around pasted paths and file:// URLs are fine.",
+            description="Load images from any paths on this machine, as one image list and one output per path. "
+            "Typing in the last path field adds another field and output. Quotes around pasted paths and "
+            "file:// URLs are fine.",
             inputs=[
                 # Edited by the node's UI; hidden there.
                 io.String.Input("paths", default="[]", socketless=True),
             ],
             outputs=[
-                io.Image.Output(id=f"image_{i}", display_name=f"image {i + 1}")
-                for i in range(MAX_IMAGE_PATHS)
+                # First, so the per-path outputs can be hidden from the end.
+                io.Image.Output(
+                    id="images",
+                    display_name="images",
+                    is_output_list=True,
+                    tooltip="All images as a list, in path order; empty without paths. Images keep their own "
+                    "size, and animated images stay a batch.",
+                ),
+                *(
+                    io.Image.Output(id=f"image_{i}", display_name=f"image {i + 1}")
+                    for i in range(MAX_IMAGE_PATHS)
+                ),
             ],
         )
 
@@ -284,7 +300,7 @@ class CardamonNodesLoadImagePaths(io.ComfyNode):
         if problems:
             raise ValueError("; ".join(problems))
         images = [load_image_file(path) for path in entries]
-        return io.NodeOutput(*images, *[None] * (MAX_IMAGE_PATHS - len(images)))
+        return io.NodeOutput(images, *images, *[None] * (MAX_IMAGE_PATHS - len(images)))
 
     @classmethod
     def fingerprint_inputs(cls, paths):

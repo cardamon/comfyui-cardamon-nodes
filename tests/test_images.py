@@ -10,13 +10,15 @@ def solid(value, height=4, width=6, channels=3, batch=1):
     return torch.full((batch, height, width, channels), value / 10)
 
 
-def stitch(
-    *images, direction="right", match=False, wrap_after=0, spacing=0, color=WHITE
-):
-    inputs = {f"image_{i}": image for i, image in enumerate(images)}
+def execute(inputs, direction="right", match=False, wrap_after=0, spacing=0, color=WHITE):
+    # The node takes input lists: every input arrives as a list.
     return CardamonNodesImageStitch.execute(
-        inputs, direction, match, wrap_after, spacing, color
+        inputs, [direction], [match], [wrap_after], [spacing], [color]
     ).args[0]
+
+
+def stitch(*images, **options):
+    return execute({f"image_{i}": [image] for i, image in enumerate(images)}, **options)
 
 
 def layout(out):
@@ -123,9 +125,26 @@ def test_batches_repeat_their_last_image():
 
 
 def test_inputs_are_ordered_by_number():
-    images = {f"image_{i}": solid(i % 10, 1, 1) for i in (10, 2, 0, 1)}
-    out = CardamonNodesImageStitch.execute(images, "right", False, 0, 0, WHITE).args[0]
-    assert layout(out) == ["0120"]
+    images = {f"image_{i}": [solid(i % 10, 1, 1)] for i in (10, 2, 0, 1)}
+    assert layout(execute(images)) == ["0120"]
+
+
+def test_an_image_list_is_stitched_like_its_images_one_by_one():
+    images = {
+        "image_0": [solid(1, 1, 1)],
+        "image_1": [solid(2, 1, 1), solid(3, 2, 1), solid(4, 1, 1)],
+        "image_2": [solid(5, 1, 1)],
+    }
+    one_by_one = [solid(1, 1, 1), solid(2, 1, 1), solid(3, 2, 1), solid(4, 1, 1), solid(5, 1, 1)]
+    out = execute(images, wrap_after=3, spacing=1)
+    assert torch.equal(out, stitch(*one_by_one, wrap_after=3, spacing=1))
+    assert layout(out) == ["1.2.3", "....3", ".....", "4.5.."]
+
+
+def test_empty_lists_and_unconnected_inputs_are_skipped():
+    assert layout(execute({"image_0": [], "image_1": None, "image_2": [solid(1, 1, 1)]})) == ["1"]
+    with pytest.raises(ValueError, match="at least one image"):
+        execute({"image_0": []})
 
 
 def test_single_image_is_returned_as_is():

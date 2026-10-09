@@ -1,13 +1,16 @@
 // UI for Load Images (Paths) (cardamon_nodes/images.py): one path field per image plus an empty
 // one at the end. Typing in the empty field adds an image output and a new empty field below it.
 // A Clear all button (with confirmation) removes every path and output.
-// The paths live in the node's hidden "paths" widget as a JSON list. The node declares
-// MAX_IMAGE_PATHS outputs; only the first paths.length are shown, so output indexes never shift.
+// The paths live in the node's hidden "paths" widget as a JSON list. The node declares the "images"
+// list output followed by MAX_IMAGE_PATHS image outputs; only the list and the first paths.length
+// image outputs are shown, so output indexes never shift.
 
 import { app } from "../../scripts/app.js";
 
 const NODE_CLASS = "CardamonNodesLoadImagePaths";
 const MAX_PATHS = 50;
+const LIST_OUTPUT = "images";
+const GRID_SHAPE = 6; // how the frontend draws list outputs
 const ROW_HEIGHT = 26;
 const ROW_GAP = 2;
 const MARGIN = 2;
@@ -57,13 +60,40 @@ function fileName(path) {
   return trimmed.split(/[\\/]/).filter(Boolean).pop() || "";
 }
 
-// Show exactly one output per path, labelled with its file name.
+// Workflows saved before the list output existed have one output per path, starting at slot 0.
+// Insert the list output in front of them and move their links one slot on. This has to happen
+// on the saved data: the frontend rebuilds the links after the nodes are configured.
+function addListOutput(graph) {
+  for (const subgraph of graph.definitions?.subgraphs ?? []) addListOutput(subgraph);
+  for (const node of graph.nodes ?? []) {
+    if (node.type !== NODE_CLASS || !Array.isArray(node.outputs)) continue;
+    let paths;
+    try {
+      paths = JSON.parse(node.widgets_values?.[0] ?? "[]");
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(paths) || node.outputs.length !== paths.length) continue;
+    node.outputs.unshift({ name: LIST_OUTPUT, type: "IMAGE", links: null, shape: GRID_SHAPE });
+    node.outputs.forEach((output, slot) => {
+      if ("slot_index" in output) output.slot_index = slot;
+    });
+    for (const link of graph.links ?? []) {
+      // [id, origin_id, origin_slot, target_id, target_slot, type], or an object in newer workflows
+      if (Array.isArray(link) && link[1] == node.id) link[2] += 1;
+      else if (link?.origin_id == node.id) link.origin_slot += 1;
+    }
+  }
+}
+
+// Show the list output and exactly one image output per path, labelled with its file name.
 function syncOutputs(node, paths) {
   node.outputs ??= [];
-  while (node.outputs.length > paths.length) node.removeOutput(node.outputs.length - 1);
-  while (node.outputs.length < paths.length) node.addOutput(`image_${node.outputs.length}`, "IMAGE");
+  const count = paths.length + 1;
+  while (node.outputs.length > count) node.removeOutput(node.outputs.length - 1);
+  while (node.outputs.length < count) node.addOutput(`image_${node.outputs.length - 1}`, "IMAGE");
   paths.forEach((path, i) => {
-    node.outputs[i].label = fileName(path) || `image ${i + 1}`;
+    node.outputs[i + 1].label = fileName(path) || `image ${i + 1}`;
   });
 }
 
@@ -88,7 +118,7 @@ function render(node) {
   const clear = document.createElement("button");
   clear.className = "cardamon-paths-clear";
   clear.textContent = "Clear all";
-  clear.title = "Remove all paths and image outputs";
+  clear.title = "Remove all paths and their image outputs";
   clear.disabled = paths.length === 0;
   clear.addEventListener("click", () => clearAll(node));
   header.append(clear);
@@ -132,7 +162,7 @@ function render(node) {
 }
 
 async function clearAll(node) {
-  const message = "Remove all image paths, and the outputs and links that belong to them?";
+  const message = "Remove all image paths, and the image outputs and links that belong to them?";
   const dialog = app.extensionManager?.dialog;
   const confirmed = dialog?.confirm
     ? await dialog.confirm({ title: "Clear all paths", message, type: "delete" })
@@ -144,6 +174,10 @@ async function clearAll(node) {
 
 app.registerExtension({
   name: "cardamon.LoadImagePaths",
+
+  beforeConfigureGraph(graphData) {
+    addListOutput(graphData);
+  },
 
   nodeCreated(node) {
     if (node.comfyClass !== NODE_CLASS) return;
