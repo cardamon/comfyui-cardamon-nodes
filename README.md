@@ -79,6 +79,13 @@ starts at a multiple of 51 frames.
   empty area. If it is transparent, or an image has alpha, the output has an alpha channel.
   Set the transparency with the color picker's alpha slider in *Nodes 2.0* mode; the classic
   canvas mode's picker doesn't have one.
+- **Load Images (Paths)**: loads images from any paths on the machine running ComfyUI, also
+  outside the ComfyUI directory, with one image output per path (up to 50). Typing in the last
+  path field adds an output, named after the file, and a new empty field below it. Paths may be
+  pasted with quotes around them, as `file://` URLs or starting with `~`. *Clear all* removes all
+  paths, outputs and their links, after confirmation. A run fails with a clear message if a path
+  is empty or a file doesn't exist. Note: anyone who can reach your ComfyUI server can use this
+  node to read images anywhere the server can, so be careful when running ComfyUI with `--listen`.
 
 ### Utilities
 

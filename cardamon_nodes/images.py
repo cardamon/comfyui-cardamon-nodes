@@ -1,10 +1,20 @@
 """Image nodes."""
 
+import json
+import os
+import urllib.parse
+
+import comfy.model_management
 import comfy.utils
+import node_helpers
+import numpy as np
 import torch
-from comfy_api.latest import io
+from comfy_api.latest import InputImpl, io
+from PIL import Image, ImageOps, ImageSequence
 
 DIRECTIONS = ["right", "down", "left", "up"]
+# Load Images (Paths) declares this many image outputs; its UI shows one per path.
+MAX_IMAGE_PATHS = 50
 
 
 def parse_color(color):
@@ -196,4 +206,101 @@ class CardamonNodesImageStitch(io.ComfyNode):
         )
 
 
-NODES = [CardamonNodesImageStitch]
+def clean_path(text):
+    """A path as typed or pasted: surrounding whitespace and quotes removed, file:// URLs and ~ resolved."""
+    path = text.strip()
+    if len(path) >= 2 and path[0] == path[-1] and path[0] in "\"'":
+        path = path[1:-1].strip()
+    if path.startswith("file://"):
+        path = urllib.parse.unquote(urllib.parse.urlparse(path).path)
+    return os.path.expanduser(path)
+
+
+def parse_paths(paths):
+    """The paths the node's UI stores as a JSON list."""
+    try:
+        entries = json.loads(paths or "[]")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"the image paths are not valid JSON: {e}") from e
+    if not isinstance(entries, list) or len(entries) > MAX_IMAGE_PATHS:
+        raise ValueError(f"expected a list of at most {MAX_IMAGE_PATHS} image paths")
+    return [clean_path(str(entry)) for entry in entries]
+
+
+def path_problems(paths):
+    problems = []
+    for i, path in enumerate(paths):
+        if not path:
+            problems.append(f"path {i + 1} is empty")
+        elif not os.path.isfile(path):
+            problems.append(f"image {i + 1} not found: {path}")
+    return problems
+
+
+def load_image_file(path):
+    """An image file as an IMAGE batch, loaded like the core Load Image node does (frames of
+    multi-frame images become the batch), but from any path."""
+    dtype = comfy.model_management.intermediate_dtype()
+    device = comfy.model_management.intermediate_device()
+    components = InputImpl.VideoFromFile(path).get_components()
+    if components.images.shape[0] > 0:
+        return components.images.to(device=device, dtype=dtype)
+
+    # PyAV can't read animated WebP; Pillow can.
+    img = node_helpers.pillow(Image.open, path)
+    frames = []
+    for frame in ImageSequence.Iterator(img):
+        frame = node_helpers.pillow(ImageOps.exif_transpose, frame).convert("RGB")
+        if frames and frame.size != (frames[0].shape[1], frames[0].shape[0]):
+            continue
+        frames.append(torch.from_numpy(np.array(frame).astype(np.float32) / 255.0))
+    return torch.stack(frames).to(device=device, dtype=dtype)
+
+
+class CardamonNodesLoadImagePaths(io.ComfyNode):
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="CardamonNodesLoadImagePaths",
+            display_name="Load Images (Paths)",
+            search_aliases=["load image from path", "image path", "load images"],
+            category="Cardamon Nodes/image",
+            description="Load images from any paths on this machine, one output per path. Typing in the last path "
+            "field adds another field and output. Quotes around pasted paths and file:// URLs are fine.",
+            inputs=[
+                # Edited by the node's UI; hidden there.
+                io.String.Input("paths", default="[]", socketless=True),
+            ],
+            outputs=[
+                io.Image.Output(id=f"image_{i}", display_name=f"image {i + 1}")
+                for i in range(MAX_IMAGE_PATHS)
+            ],
+        )
+
+    @classmethod
+    def execute(cls, paths) -> io.NodeOutput:
+        entries = parse_paths(paths)
+        problems = path_problems(entries)
+        if problems:
+            raise ValueError("; ".join(problems))
+        images = [load_image_file(path) for path in entries]
+        return io.NodeOutput(*images, *[None] * (MAX_IMAGE_PATHS - len(images)))
+
+    @classmethod
+    def fingerprint_inputs(cls, paths):
+        # Rerun when a file changes.
+        return [
+            (path, os.path.getmtime(path) if os.path.isfile(path) else None)
+            for path in parse_paths(paths)
+        ]
+
+    @classmethod
+    def validate_inputs(cls, paths):
+        try:
+            problems = path_problems(parse_paths(paths))
+        except ValueError as e:
+            return str(e)
+        return "; ".join(problems) if problems else True
+
+
+NODES = [CardamonNodesImageStitch, CardamonNodesLoadImagePaths]
