@@ -27,7 +27,8 @@ git clone https://github.com/cardamon/comfyui-cardamon-nodes.git
 - **Prepend MiniMax H3 Latent Section**: writes a section into the first frames of the latent to
   sample, e.g. the one from *MiniMax H3 Image to Video* or *Reference to Video*, and adds a noise
   mask that keeps the section unchanged while the rest is generated. The latent sets the video's
-  size and total length, section included. An empty section leaves the latent unchanged.
+  size and total length, section included. The section is optional: without one, or with an empty
+  one, the latent passes through unchanged.
 
 To continue a generated video, extract its last frames (e.g. `start_frame` -22) and either anchor
 them at `frame_idx` 0 of the next generation with *Add Latent Guide*, or put them in front of it

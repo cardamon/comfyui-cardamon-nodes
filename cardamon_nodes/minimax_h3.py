@@ -268,15 +268,17 @@ class CardamonNodesMiniMaxH3PrependLatent(io.ComfyNode):
                 ),
                 io.Latent.Input(
                     "section",
+                    optional=True,
                     tooltip="MiniMax H3 AV latent section to start the video with, with the same width and height. "
-                    "An empty latent or no value (e.g. on a loop's first iteration) leaves the latent unchanged.",
+                    "If it's not connected, empty or has no value (e.g. on a loop's first iteration), the latent passes "
+                    "through unchanged.",
                 ),
             ],
             outputs=[io.Latent.Output(display_name="latent")],
         )
 
     @classmethod
-    def execute(cls, latent, section) -> io.NodeOutput:
+    def execute(cls, latent, section=None) -> io.NodeOutput:
         if is_empty_latent(section):
             return io.NodeOutput(latent)
         video, audio = split_av_latent(latent, "CardamonNodesMiniMaxH3PrependLatent")

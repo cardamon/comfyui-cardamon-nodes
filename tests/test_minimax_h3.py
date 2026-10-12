@@ -235,6 +235,11 @@ def test_prepend_without_section_passes_latent_through(empty):
     assert prepend(latent, empty) is latent
 
 
+def test_prepend_section_is_optional():
+    latent = zero_av_latent(226)
+    assert CardamonNodesMiniMaxH3PrependLatent.execute(latent).args[0] is latent
+
+
 def test_prepend_rejects_mismatched_or_too_long_sections():
     section, _, _ = extract(av_latent(124, width=128), -22)
     with pytest.raises(ValueError, match="128x64"):
