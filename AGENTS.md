@@ -89,6 +89,17 @@ The H3 code in ComfyUI is in `comfy/ldm/minimax/{model,vae,audio_vae}.py`,
 - **Python:** use the conda env `py312` (`conda run -n py312 …`). It has torch and all of ComfyUI's
   requirements. Run the tests with `COMFYUI_PATH=<ComfyUI checkout> pytest`, which uses the real
   `comfy_api`.
+- **Run on the CPU:** the GPU is often busy (tests then fail with CUDA out of memory), and the
+  tests don't need it. Hiding it with `CUDA_VISIBLE_DEVICES=` alone fails ("No CUDA GPUs are
+  available"), because ComfyUI only falls back to the CPU when its `--cpu` flag is set, so set
+  that flag before pytest imports ComfyUI:
+
+  ```sh
+  CUDA_VISIBLE_DEVICES= COMFYUI_PATH=<checkout> conda run -n py312 python -c "
+  import sys; sys.path.insert(0, '<checkout>')
+  import comfy.cli_args; comfy.cli_args.args.cpu = True
+  import pytest; sys.exit(pytest.main(['-q']))"
+  ```
 - **ComfyUI clone:** use a throwaway one, so the real install isn't touched:
   `git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git`, then symlink this repo to
   `custom_nodes/comfyui-cardamon-nodes`.
